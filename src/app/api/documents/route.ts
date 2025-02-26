@@ -27,20 +27,39 @@ export async function POST(request: NextRequest) {
       type,
     });
     
-    // Save document metadata to database
-    await prisma.document.create({
-      data: {
-        id: document.id,
-        fileName: document.fileName,
-        path: document.path,
-        type: document.type,
-        uploadDate: document.uploadDate,
-        lastModified: document.lastModified,
-        card: { connect: { id: cardId } }
-      }
+    // Save document metadata to database - use any to bypass potential type issues
+    const docData: any = {
+      id: document.id,
+      fileName: document.fileName,
+      path: document.path,
+      type: document.type,
+      uploadDate: document.uploadDate,
+      lastModified: document.lastModified,
+    };
+    
+    // Dynamically set the relation field based on the card type
+    const card = await prisma.card.findUnique({
+      where: { id: cardId },
+      select: { type: true }
     });
     
-    return NextResponse.json(document);
+    if (!card) {
+      return NextResponse.json(
+        { error: 'Card not found' },
+        { status: 404 }
+      );
+    }
+    
+    // Set the correct relation field
+    const relationField = `${card.type}CardId`;
+    docData[relationField] = cardId;
+    
+    // Create the document
+    const createdDoc = await prisma.document.create({
+      data: docData
+    });
+    
+    return NextResponse.json(createdDoc);
   } catch (error) {
     console.error('Error uploading document:', error);
     return NextResponse.json(

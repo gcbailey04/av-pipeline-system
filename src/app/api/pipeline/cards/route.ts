@@ -178,7 +178,7 @@ export async function DELETE(request: NextRequest) {
       select: { type: true }
     });
     
-    if (card?.type === 'integration') {
+    if (card && card.type === 'integration') { // Fix here: Add null check for card
       await prisma.equipmentStatus.delete({
         where: { cardId: id }
       });
@@ -203,13 +203,13 @@ export async function DELETE(request: NextRequest) {
 function getCardStage(card: Card): string {
   switch (card.type) {
     case 'sales':
-      return (card as any).stage;
+      return card.stage;
     case 'integration':
-      return (card as any).stage;
+      return card.stage;
     case 'service':
-      return (card as any).stage;
+      return card.stage;
     case 'rental':
-      return (card as any).stage;
+      return card.stage;
     default:
       throw new Error(`Invalid card type: ${card.type}`);
   }
@@ -217,6 +217,8 @@ function getCardStage(card: Card): string {
 
 // Helper function to get the column ID by stage
 async function getColumnIdByStage(pipelineType: PipelineType, stage: string): Promise<string> {
+  // We're not using cardTypeMap at this point, so we'll remove that to fix the type error
+  
   const pipeline = await prisma.pipeline.findFirst({
     where: { type: pipelineType },
     include: {

@@ -68,11 +68,52 @@ export const CardAddDialog: React.FC<CardAddDialogProps> = ({
   initialStage,
   relatedCard
 }) => {
-  const [formData, setFormData] = useState<Partial<Card>>({
-    title: relatedCard?.title || '',
-    description: relatedCard?.description || '',
-    customerId: relatedCard?.customerId || uuidv4(), // In a real app, you'd select from customers
-    projectNumber: generateProjectNumber(pipelineType),
+  // Use a generic partial card type instead of conditional types
+  type FormDataType = Partial<SalesCard | ServiceCard | RentalCard | IntegrationCard>;
+
+  const [formData, setFormData] = useState<FormDataType>(() => {
+    // Base data common to all card types
+    const baseData = {
+      title: relatedCard?.title || '',
+      description: relatedCard?.description || '',
+      customerId: relatedCard?.customerId || uuidv4(),
+      projectNumber: generateProjectNumber(pipelineType),
+    };
+    
+    // Return type-specific initial state
+    switch(pipelineType) {
+      case 'sales':
+        return {
+          ...baseData,
+          type: 'sales' as const,
+          estimateValue: 0,
+        };
+      case 'service':
+        return {
+          ...baseData,
+          type: 'service' as const,
+          serviceType: 'maintenance' as const,
+        };
+      case 'rental':
+        return {
+          ...baseData,
+          type: 'rental' as const,
+          equipmentList: [],
+          quoteValue: 0,
+        };
+      case 'integration':
+        return {
+          ...baseData,
+          type: 'integration' as const,
+          salesCardId: relatedCard?.id || '',
+          equipmentStatus: {
+            ordered: false,
+            received: false,
+          },
+        };
+      default:
+        return baseData;
+    }
   });
   
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -124,8 +165,8 @@ export const CardAddDialog: React.FC<CardAddDialogProps> = ({
           ...baseCard,
           type: 'sales',
           stage: (initialStage as SalesStage) || 'New Lead',
-          estimateValue: typeof formData.estimateValue === 'number' 
-            ? formData.estimateValue 
+          estimateValue: typeof (formData as Partial<SalesCard>).estimateValue === 'number' 
+            ? (formData as Partial<SalesCard>).estimateValue || 0
             : 0,
         } as SalesCard;
         break;
@@ -135,7 +176,7 @@ export const CardAddDialog: React.FC<CardAddDialogProps> = ({
           ...baseCard,
           type: 'integration',
           stage: (initialStage as IntegrationStage) || 'Approved',
-          salesCardId: relatedCard?.id || '',
+          salesCardId: (formData as Partial<IntegrationCard>).salesCardId || '',
           equipmentStatus: {
             ordered: false,
             received: false,
@@ -159,7 +200,7 @@ export const CardAddDialog: React.FC<CardAddDialogProps> = ({
           stage: (initialStage as RentalStage) || 'Request Received',
           eventDate: (formData as Partial<RentalCard>).eventDate,
           equipmentList: [],
-          quoteValue: 0,
+          quoteValue: (formData as Partial<RentalCard>).quoteValue || 0,
         } as RentalCard;
         break;
         
