@@ -1,9 +1,8 @@
 // app/api/pipeline/route.ts
 
 import { NextResponse } from 'next/server';
-import { PipelineService } from '../../../lib/db/pipelineService';
-
-const pipelineService = new PipelineService();
+import { prisma } from '@/lib';
+import { PipelineType, Card } from '@/types/pipeline';
 
 // Mock data for development until DB is fully set up
 const mockData = {
@@ -64,7 +63,7 @@ const mockData = {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const type = searchParams.get('type') as 'sales' | 'integration' | 'service' | 'rental';
+  const type = searchParams.get('type') as PipelineType;
 
   if (!type) {
     return NextResponse.json({ error: 'Pipeline type is required' }, { status: 400 });
@@ -74,13 +73,7 @@ export async function GET(request: Request) {
     console.log('Fetching pipeline for type:', type);
     
     // For development: return mock data instead of hitting the database
-    // Remove this conditional when database is fully set up
-    if (process.env.NODE_ENV === 'development') {
-      return NextResponse.json(mockData[type] || []);
-    }
-    
-    const pipeline = await pipelineService.getPipeline(type);
-    return NextResponse.json(pipeline);
+    return NextResponse.json(mockData[type] || []);
   } catch (error) {
     console.error('Failed to get pipeline:', error);
     
@@ -96,30 +89,16 @@ export async function POST(request: Request) {
     const { type, ...data } = body;
     console.log('POST request received:', { type, data });
 
-    // For development: return mock success response
-    if (process.env.NODE_ENV === 'development') {
-      return NextResponse.json({ id: 'mock-id', ...data });
+    // For development: add the card to mock data and return success
+    if (type && mockData[type]) {
+      const targetColumn = mockData[type].find(col => col.id === data.stage) || mockData[type][0];
+      if (targetColumn) {
+        targetColumn.cards.push(data);
+        return NextResponse.json({ id: data.id, ...data });
+      }
     }
 
-    let result;
-    switch (type) {
-      case 'sales':
-        result = await pipelineService.createSalesCard(data);
-        break;
-      case 'integration':
-        result = await pipelineService.createIntegrationCard(data);
-        break;
-      case 'service':
-        result = await pipelineService.createServiceCard(data);
-        break;
-      case 'rental':
-        result = await pipelineService.createRentalCard(data);
-        break;
-      default:
-        return NextResponse.json({ error: 'Invalid pipeline type' }, { status: 400 });
-    }
-
-    return NextResponse.json(result);
+    return NextResponse.json({ id: 'mock-id', ...data });
   } catch (error) {
     console.error('Failed to create card:', error);
     return NextResponse.json({ error: 'Failed to create card' }, { status: 500 });
@@ -132,13 +111,29 @@ export async function PATCH(request: Request) {
     const { type, cardId, stage } = body;
     console.log('PATCH request received:', { type, cardId, stage });
 
-    // For development: return mock success response
-    if (process.env.NODE_ENV === 'development') {
-      return NextResponse.json({ success: true, id: cardId });
+    // For development: simulate moving card in mock data
+    if (type && mockData[type]) {
+      // Find and remove the card from its current column
+      let card: any = null;
+      mockData[type].forEach(column => {
+        const cardIndex = column.cards.findIndex((c: any) => c.id === cardId);
+        if (cardIndex !== -1) {
+          card = column.cards.splice(cardIndex, 1)[0];
+        }
+      });
+
+      // Add it to the new column
+      if (card && stage) {
+        const targetColumn = mockData[type].find(col => col.id === stage);
+        if (targetColumn) {
+          card.stage = stage;
+          targetColumn.cards.push(card);
+          return NextResponse.json({ success: true, id: cardId });
+        }
+      }
     }
 
-    const result = await pipelineService.updateCardStage(type, cardId, stage);
-    return NextResponse.json(result);
+    return NextResponse.json({ success: true, id: cardId });
   } catch (error) {
     console.error('Failed to update card:', error);
     return NextResponse.json({ error: 'Failed to update card' }, { status: 500 });

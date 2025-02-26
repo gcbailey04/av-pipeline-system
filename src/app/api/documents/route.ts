@@ -1,9 +1,9 @@
 // src/app/api/documents/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
-import { fileStorage } from '../../../lib/fileStorage';
-import { prisma } from '../../../lib/prisma';
-import { Document } from '../../../types/pipeline';
+import { fileStorage } from '@/lib/fileStorage';
+import { prisma } from '@/lib'; // Changed import to use the path alias
+import { Document } from '@/types/pipeline';
 
 export async function POST(request: NextRequest) {
   try {
