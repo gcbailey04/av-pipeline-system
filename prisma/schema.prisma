@@ -1,0 +1,156 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Customer model
+model Customer {
+  id               String    @id @default(cuid())
+  name             String
+  isReturnCustomer Boolean   @default(false)
+  lastInteraction  DateTime
+  email           String
+  phone           String
+  address         String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  // Relations
+  salesCards      SalesCard[]
+  serviceCards    ServiceCard[]
+  rentalCards     RentalCard[]
+  integrationCards IntegrationCard[]
+}
+
+// Document model
+model Document {
+  id            String    @id @default(cuid())
+  fileName      String
+  path          String
+  type          String    // 'estimate' | 'co' | 'photo' | 'documentation' | 'programming'
+  uploadDate    DateTime  @default(now())
+  lastModified  DateTime  @updatedAt
+  
+  // Relations
+  salesCard        SalesCard?    @relation(fields: [salesCardId], references: [id])
+  salesCardId      String?
+  serviceCard      ServiceCard?  @relation(fields: [serviceCardId], references: [id])
+  serviceCardId    String?
+  rentalCard       RentalCard?   @relation(fields: [rentalCardId], references: [id])
+  rentalCardId     String?
+  integrationCard  IntegrationCard? @relation(fields: [integrationCardId], references: [id])
+  integrationCardId String?
+}
+
+// Base card fields as Prisma mixin
+model SalesCard {
+  id               String    @id @default(cuid())
+  customerId       String
+  projectNumber    String    @unique
+  title           String
+  description     String
+  createdAt       DateTime  @default(now())
+  lastModified    DateTime  @updatedAt
+  dueDate         DateTime?
+  lastInteraction DateTime
+  stage           String    // SalesStage type
+  estimateValue   Float
+  appointmentDate DateTime?
+  proposalSentDate DateTime?
+  
+  // Automation status
+  emailLogged         Boolean   @default(false)
+  alertsSent         Boolean   @default(false)
+  documentsGenerated Boolean   @default(false)
+  
+  // Relations
+  customer        Customer   @relation(fields: [customerId], references: [id])
+  documents       Document[]
+  integrationCard IntegrationCard?
+}
+
+model IntegrationCard {
+  id               String    @id @default(cuid())
+  customerId       String
+  projectNumber    String    @unique
+  title           String
+  description     String
+  createdAt       DateTime  @default(now())
+  lastModified    DateTime  @updatedAt
+  dueDate         DateTime?
+  lastInteraction DateTime
+  stage           String    // IntegrationStage type
+  salesCardId     String    @unique
+  
+  // Equipment status
+  equipmentOrdered  Boolean   @default(false)
+  equipmentReceived Boolean   @default(false)
+  installedDate    DateTime?
+  installationDate DateTime?
+  
+  // Automation status
+  emailLogged         Boolean   @default(false)
+  alertsSent         Boolean   @default(false)
+  documentsGenerated Boolean   @default(false)
+  
+  // Relations
+  customer        Customer   @relation(fields: [customerId], references: [id])
+  salesCard       SalesCard  @relation(fields: [salesCardId], references: [id])
+  documents       Document[]
+}
+
+model ServiceCard {
+  id               String    @id @default(cuid())
+  customerId       String
+  projectNumber    String    @unique
+  title           String
+  description     String
+  createdAt       DateTime  @default(now())
+  lastModified    DateTime  @updatedAt
+  dueDate         DateTime?
+  lastInteraction DateTime
+  stage           String    // ServiceStage type
+  serviceType     String    // 'maintenance' | 'repair' | 'upgrade'
+  rmaNumber       String?
+  partsRequired   String[]
+  
+  // Automation status
+  emailLogged         Boolean   @default(false)
+  alertsSent         Boolean   @default(false)
+  documentsGenerated Boolean   @default(false)
+  
+  // Relations
+  customer        Customer   @relation(fields: [customerId], references: [id])
+  documents       Document[]
+}
+
+model RentalCard {
+  id               String    @id @default(cuid())
+  customerId       String
+  projectNumber    String    @unique
+  title           String
+  description     String
+  createdAt       DateTime  @default(now())
+  lastModified    DateTime  @updatedAt
+  dueDate         DateTime?
+  lastInteraction DateTime
+  stage           String    // RentalStage type
+  eventDate       DateTime?
+  equipmentList   String[]
+  quoteValue      Float
+  
+  // Automation status
+  emailLogged         Boolean   @default(false)
+  alertsSent         Boolean   @default(false)
+  documentsGenerated Boolean   @default(false)
+  
+  // Relations
+  customer        Customer   @relation(fields: [customerId], references: [id])
+  documents       Document[]
+}
