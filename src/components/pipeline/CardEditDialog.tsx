@@ -1,5 +1,15 @@
 import React from 'react';
-import { Card as CardType, SalesCard, ServiceCard, RentalCard } from '../../types/pipeline';
+import { 
+  Card as CardType, 
+  SalesCard, 
+  ServiceCard, 
+  RentalCard,
+  IntegrationCard,
+  SalesStage,
+  ServiceStage,
+  RentalStage,
+  IntegrationStage
+} from '../../types/pipeline';
 import {
   Dialog,
   DialogContent,
@@ -18,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../components/ui/select';
+import { getPipelineStages } from '../../lib/column-helpers';
 
 interface CardEditDialogProps<T extends CardType> {
   card: T | null;
@@ -38,22 +49,126 @@ export const CardEditDialog = <T extends CardType>({
   onOpenChange,
   onSave,
 }: CardEditDialogProps<T>) => {
-  const [formData, setFormData] = React.useState<Partial<T> | null>(null);
+  // Type-specific form data to maintain type safety
+  const [salesFormData, setSalesFormData] = React.useState<Partial<SalesCard> | null>(null);
+  const [serviceFormData, setServiceFormData] = React.useState<Partial<ServiceCard> | null>(null);
+  const [rentalFormData, setRentalFormData] = React.useState<Partial<RentalCard> | null>(null);
+  const [integrationFormData, setIntegrationFormData] = React.useState<Partial<IntegrationCard> | null>(null);
 
+  // Initialize the appropriate form data when card changes
   React.useEffect(() => {
-    if (card) {
-      setFormData({ ...card });
+    if (!card) {
+      setSalesFormData(null);
+      setServiceFormData(null);
+      setRentalFormData(null);
+      setIntegrationFormData(null);
+      return;
+    }
+
+    switch (card.type) {
+      case 'sales':
+        setSalesFormData({ ...card as SalesCard });
+        setServiceFormData(null);
+        setRentalFormData(null);
+        setIntegrationFormData(null);
+        break;
+      case 'service':
+        setSalesFormData(null);
+        setServiceFormData({ ...card as ServiceCard });
+        setRentalFormData(null);
+        setIntegrationFormData(null);
+        break;
+      case 'rental':
+        setSalesFormData(null);
+        setServiceFormData(null);
+        setRentalFormData({ ...card as RentalCard });
+        setIntegrationFormData(null);
+        break;
+      case 'integration':
+        setSalesFormData(null);
+        setServiceFormData(null);
+        setRentalFormData(null);
+        setIntegrationFormData({ ...card as IntegrationCard });
+        break;
     }
   }, [card]);
 
-  if (!card || !formData) return null;
+  if (!card) return null;
+
+  // Helper to get the current form data based on card type
+  const getFormData = () => {
+    switch (card.type) {
+      case 'sales': return salesFormData;
+      case 'service': return serviceFormData;
+      case 'rental': return rentalFormData;
+      case 'integration': return integrationFormData;
+      default: return null;
+    }
+  };
+
+  const formData = getFormData();
+  if (!formData) return null;
+
+  // Helper to update the appropriate form data
+  const updateFormData = (updates: any) => {
+    switch (card.type) {
+      case 'sales':
+        setSalesFormData(prev => prev ? { ...prev, ...updates } : null);
+        break;
+      case 'service':
+        setServiceFormData(prev => prev ? { ...prev, ...updates } : null);
+        break;
+      case 'rental':
+        setRentalFormData(prev => prev ? { ...prev, ...updates } : null);
+        break;
+      case 'integration':
+        setIntegrationFormData(prev => prev ? { ...prev, ...updates } : null);
+        break;
+    }
+  };
+
+  const handleStageChange = (value: string) => {
+    switch (card.type) {
+      case 'sales':
+        setSalesFormData(prev => prev ? { ...prev, stage: value as SalesStage } : null);
+        break;
+      case 'service':
+        setServiceFormData(prev => prev ? { ...prev, stage: value as ServiceStage } : null);
+        break;
+      case 'rental':
+        setRentalFormData(prev => prev ? { ...prev, stage: value as RentalStage } : null);
+        break;
+      case 'integration':
+        setIntegrationFormData(prev => prev ? { ...prev, stage: value as IntegrationStage } : null);
+        break;
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (formData) {
-      onSave(formData as T);
-      onOpenChange(false);
+    
+    // Create a merged card with the updated form data
+    let updatedCard;
+    
+    switch (card.type) {
+      case 'sales':
+        updatedCard = { ...card, ...salesFormData } as T;
+        break;
+      case 'service':
+        updatedCard = { ...card, ...serviceFormData } as T;
+        break;
+      case 'rental':
+        updatedCard = { ...card, ...rentalFormData } as T;
+        break;
+      case 'integration':
+        updatedCard = { ...card, ...integrationFormData } as T;
+        break;
+      default:
+        return;
     }
+    
+    onSave(updatedCard);
+    onOpenChange(false);
   };
 
   const renderCommonFields = () => (
@@ -63,7 +178,7 @@ export const CardEditDialog = <T extends CardType>({
         <Input
           id="title"
           value={formData.title || ''}
-          onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+          onChange={(e) => updateFormData({ title: e.target.value })}
         />
       </div>
 
@@ -72,8 +187,27 @@ export const CardEditDialog = <T extends CardType>({
         <Textarea
           id="description"
           value={formData.description || ''}
-          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          onChange={(e) => updateFormData({ description: e.target.value })}
         />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="stage">Stage</Label>
+        <Select
+          value={formData.stage as string}
+          onValueChange={handleStageChange}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select stage" />
+          </SelectTrigger>
+          <SelectContent>
+            {getPipelineStages(card.type).map((stage) => (
+              <SelectItem key={stage.id} value={stage.title}>
+                {stage.title}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-2">
@@ -82,8 +216,7 @@ export const CardEditDialog = <T extends CardType>({
           id="dueDate"
           type="date"
           value={formatDateForInput(formData.dueDate)}
-          onChange={(e) => setFormData({ 
-            ...formData, 
+          onChange={(e) => updateFormData({ 
             dueDate: e.target.value ? new Date(e.target.value) : null 
           })}
         />
@@ -101,9 +234,8 @@ export const CardEditDialog = <T extends CardType>({
               id="estimateValue"
               type="number"
               value={(formData as Partial<SalesCard>).estimateValue || ''}
-              onChange={(e) => setFormData({ 
-                ...formData, 
-                estimateValue: parseFloat(e.target.value) 
+              onChange={(e) => updateFormData({ 
+                estimateValue: e.target.value ? parseFloat(e.target.value) : 0
               })}
             />
           </div>
@@ -115,8 +247,7 @@ export const CardEditDialog = <T extends CardType>({
             <Label htmlFor="serviceType">Service Type</Label>
             <Select
               value={(formData as Partial<ServiceCard>).serviceType}
-              onValueChange={(value) => setFormData({ 
-                ...formData, 
+              onValueChange={(value) => updateFormData({ 
                 serviceType: value as 'maintenance' | 'repair' | 'upgrade'
               })}
             >
@@ -140,11 +271,45 @@ export const CardEditDialog = <T extends CardType>({
               id="eventDate"
               type="date"
               value={formatDateForInput((formData as Partial<RentalCard>).eventDate)}
-              onChange={(e) => setFormData({ 
-                ...formData, 
+              onChange={(e) => updateFormData({ 
                 eventDate: e.target.value ? new Date(e.target.value) : undefined 
               })}
             />
+          </div>
+        );
+
+      case 'integration':
+        return (
+          <div className="space-y-2">
+            <Label htmlFor="equipmentStatus">Equipment Status</Label>
+            <div className="space-y-2">
+              <label className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={(formData as Partial<IntegrationCard>).equipmentStatus?.ordered || false}
+                  onChange={(e) => updateFormData({ 
+                    equipmentStatus: {
+                      ...(formData as Partial<IntegrationCard>).equipmentStatus,
+                      ordered: e.target.checked
+                    }
+                  })}
+                />
+                <span>Equipment Ordered</span>
+              </label>
+              <label className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={(formData as Partial<IntegrationCard>).equipmentStatus?.received || false}
+                  onChange={(e) => updateFormData({ 
+                    equipmentStatus: {
+                      ...(formData as Partial<IntegrationCard>).equipmentStatus,
+                      received: e.target.checked
+                    }
+                  })}
+                />
+                <span>Equipment Received</span>
+              </label>
+            </div>
           </div>
         );
 

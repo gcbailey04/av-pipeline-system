@@ -7,14 +7,14 @@ import { Skeleton } from '../../components/ui/skeleton'
 import { AddCardButton } from './AddCardButton'
 
 interface PipelineBoardProps<T extends CardType> {
-  pipeline: Pipeline<T>
-  pipelineType: PipelineType
-  onCardMove?: (cardId: string, sourceColumnId: string, targetColumnId: string) => void
-  onCardClick?: (card: T) => void
-  onCardUpdate?: (cardId: string, updatedCard: T) => void
-  onCardAdd?: (newCard: T, files: File[]) => Promise<void>
-  isLoading?: boolean
-  error?: string | null
+  pipeline: Pipeline<T> | null; // Changed to allow null
+  pipelineType: PipelineType;
+  onCardMove?: (cardId: string, sourceColumnId: string, targetColumnId: string) => void;
+  onCardClick?: (card: T) => void;
+  onCardUpdate?: (cardId: string, updatedCard: T) => void;
+  onCardAdd?: (newCard: T, files: File[]) => Promise<void>;
+  isLoading?: boolean;
+  error?: string | null;
 }
 
 export const PipelineBoard = <T extends CardType>({
@@ -38,6 +38,8 @@ export const PipelineBoard = <T extends CardType>({
   const [updateError, setUpdateError] = useState<string | null>(null)
 
   const handleDragStart = (e: React.DragEvent, card: T) => {
+    if (!pipeline) return;
+    
     const columnId = pipeline.columns.find(col => 
       col.cards.some(c => c.id === card.id)
     )?.id
@@ -111,6 +113,21 @@ export const PipelineBoard = <T extends CardType>({
         <AlertDescription>{error}</AlertDescription>
       </Alert>
     )
+  }
+
+  // No data state (when pipeline is null but not loading)
+  if (!pipeline) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center">
+        <h2 className="text-xl mb-4">No pipeline data available</h2>
+        {onCardAdd && (
+          <AddCardButton 
+            pipelineType={pipelineType} 
+            onCardAdd={onCardAdd as (newCard: CardType, files: File[]) => Promise<void>}
+          />
+        )}
+      </div>
+    );
   }
 
   return (

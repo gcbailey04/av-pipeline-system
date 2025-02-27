@@ -34,6 +34,7 @@ import {
   PipelineType,
   Document
 } from '../../types/pipeline';
+import { getPipelineStages, getDefaultStage } from '../../lib/column-helpers';
 
 interface CardAddDialogProps {
   pipelineType: PipelineType;
@@ -68,11 +69,18 @@ export const CardAddDialog: React.FC<CardAddDialogProps> = ({
   initialStage,
   relatedCard
 }) => {
-  // Use a generic partial card type instead of conditional types
-  type FormDataType = Partial<SalesCard | ServiceCard | RentalCard | IntegrationCard>;
-
-  const [formData, setFormData] = useState<FormDataType>(() => {
-    // Base data common to all card types
+  // Use more specific state types based on pipeline type
+  const [salesFormData, setSalesFormData] = useState<Partial<SalesCard> | null>(null);
+  const [serviceFormData, setServiceFormData] = useState<Partial<ServiceCard> | null>(null);
+  const [rentalFormData, setRentalFormData] = useState<Partial<RentalCard> | null>(null);
+  const [integrationFormData, setIntegrationFormData] = useState<Partial<IntegrationCard> | null>(null);
+  
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [documentTypes, setDocumentTypes] = useState<Document['type'][]>([]);
+  
+  // Initialize form data based on pipeline type
+  React.useEffect(() => {
+    const defaultStage = initialStage || getDefaultStage(pipelineType);
     const baseData = {
       title: relatedCard?.title || '',
       description: relatedCard?.description || '',
@@ -80,54 +88,140 @@ export const CardAddDialog: React.FC<CardAddDialogProps> = ({
       projectNumber: generateProjectNumber(pipelineType),
     };
     
-    // Return type-specific initial state
+    // Reset all form data
+    setSalesFormData(null);
+    setServiceFormData(null);
+    setRentalFormData(null);
+    setIntegrationFormData(null);
+    
+    // Set the appropriate form data based on pipeline type
     switch(pipelineType) {
       case 'sales':
-        return {
+        setSalesFormData({
           ...baseData,
-          type: 'sales' as const,
+          type: 'sales',
+          stage: defaultStage as SalesStage,
           estimateValue: 0,
-        };
+        });
+        break;
       case 'service':
-        return {
+        setServiceFormData({
           ...baseData,
-          type: 'service' as const,
-          serviceType: 'maintenance' as const,
-        };
+          type: 'service',
+          stage: defaultStage as ServiceStage,
+          serviceType: 'maintenance',
+        });
+        break;
       case 'rental':
-        return {
+        setRentalFormData({
           ...baseData,
-          type: 'rental' as const,
+          type: 'rental',
+          stage: defaultStage as RentalStage,
           equipmentList: [],
           quoteValue: 0,
-        };
+        });
+        break;
       case 'integration':
-        return {
+        setIntegrationFormData({
           ...baseData,
-          type: 'integration' as const,
+          type: 'integration',
+          stage: defaultStage as IntegrationStage,
           salesCardId: relatedCard?.id || '',
           equipmentStatus: {
             ordered: false,
             received: false,
           },
-        };
-      default:
-        return baseData;
+        });
+        break;
     }
-  });
+  }, [pipelineType, initialStage, relatedCard]);
   
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [documentTypes, setDocumentTypes] = useState<Document['type'][]>([]);
+  // Get the current form data based on pipeline type
+  const getFormData = () => {
+    switch(pipelineType) {
+      case 'sales': return salesFormData;
+      case 'service': return serviceFormData;
+      case 'rental': return rentalFormData;
+      case 'integration': return integrationFormData;
+      default: return null;
+    }
+  };
+  
+  // Update the appropriate form data based on pipeline type
+  const updateFormData = (updates: any) => {
+    switch(pipelineType) {
+      case 'sales':
+        setSalesFormData(prev => prev ? { ...prev, ...updates } : null);
+        break;
+      case 'service':
+        setServiceFormData(prev => prev ? { ...prev, ...updates } : null);
+        break;
+      case 'rental':
+        setRentalFormData(prev => prev ? { ...prev, ...updates } : null);
+        break;
+      case 'integration':
+        setIntegrationFormData(prev => prev ? { ...prev, ...updates } : null);
+        break;
+    }
+  };
   
   const resetForm = () => {
-    setFormData({
+    // Reset all state
+    setSalesFormData(null);
+    setServiceFormData(null);
+    setRentalFormData(null);
+    setIntegrationFormData(null);
+    setSelectedFiles([]);
+    setDocumentTypes([]);
+    
+    // Re-initialize based on pipeline type
+    const defaultStage = getDefaultStage(pipelineType);
+    const baseData = {
       title: '',
       description: '',
       customerId: uuidv4(),
       projectNumber: generateProjectNumber(pipelineType),
-    });
-    setSelectedFiles([]);
-    setDocumentTypes([]);
+    };
+    
+    switch(pipelineType) {
+      case 'sales':
+        setSalesFormData({
+          ...baseData,
+          type: 'sales',
+          stage: defaultStage as SalesStage,
+          estimateValue: 0,
+        });
+        break;
+      case 'service':
+        setServiceFormData({
+          ...baseData,
+          type: 'service',
+          stage: defaultStage as ServiceStage,
+          serviceType: 'maintenance',
+        });
+        break;
+      case 'rental':
+        setRentalFormData({
+          ...baseData,
+          type: 'rental',
+          stage: defaultStage as RentalStage,
+          equipmentList: [],
+          quoteValue: 0,
+        });
+        break;
+      case 'integration':
+        setIntegrationFormData({
+          ...baseData,
+          type: 'integration',
+          stage: defaultStage as IntegrationStage,
+          salesCardId: '',
+          equipmentStatus: {
+            ordered: false,
+            received: false,
+          },
+        });
+        break;
+    }
   };
   
   const handleClose = () => {
@@ -137,6 +231,9 @@ export const CardAddDialog: React.FC<CardAddDialogProps> = ({
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    const formData = getFormData();
+    if (!formData) return;
     
     const now = new Date();
     const baseCard = {
@@ -163,45 +260,33 @@ export const CardAddDialog: React.FC<CardAddDialogProps> = ({
       case 'sales':
         newCard = {
           ...baseCard,
+          ...salesFormData,
           type: 'sales',
-          stage: (initialStage as SalesStage) || 'New Lead',
-          estimateValue: typeof (formData as Partial<SalesCard>).estimateValue === 'number' 
-            ? (formData as Partial<SalesCard>).estimateValue || 0
-            : 0,
         } as SalesCard;
-        break;
-        
-      case 'integration':
-        newCard = {
-          ...baseCard,
-          type: 'integration',
-          stage: (initialStage as IntegrationStage) || 'Approved',
-          salesCardId: (formData as Partial<IntegrationCard>).salesCardId || '',
-          equipmentStatus: {
-            ordered: false,
-            received: false,
-          },
-        } as IntegrationCard;
         break;
         
       case 'service':
         newCard = {
           ...baseCard,
+          ...serviceFormData,
           type: 'service',
-          stage: (initialStage as ServiceStage) || 'Request Received',
-          serviceType: (formData as Partial<ServiceCard>).serviceType || 'maintenance',
         } as ServiceCard;
         break;
         
       case 'rental':
         newCard = {
           ...baseCard,
+          ...rentalFormData,
           type: 'rental',
-          stage: (initialStage as RentalStage) || 'Request Received',
-          eventDate: (formData as Partial<RentalCard>).eventDate,
-          equipmentList: [],
-          quoteValue: (formData as Partial<RentalCard>).quoteValue || 0,
         } as RentalCard;
+        break;
+        
+      case 'integration':
+        newCard = {
+          ...baseCard,
+          ...integrationFormData,
+          type: 'integration',
+        } as IntegrationCard;
         break;
         
       default:
@@ -222,6 +307,26 @@ export const CardAddDialog: React.FC<CardAddDialogProps> = ({
     setDocumentTypes(prev => prev.filter((_, i) => i !== index));
   };
   
+  const handleStageChange = (value: string) => {
+    switch(pipelineType) {
+      case 'sales':
+        setSalesFormData(prev => prev ? { ...prev, stage: value as SalesStage } : null);
+        break;
+      case 'service':
+        setServiceFormData(prev => prev ? { ...prev, stage: value as ServiceStage } : null);
+        break;
+      case 'rental':
+        setRentalFormData(prev => prev ? { ...prev, stage: value as RentalStage } : null);
+        break;
+      case 'integration':
+        setIntegrationFormData(prev => prev ? { ...prev, stage: value as IntegrationStage } : null);
+        break;
+    }
+  };
+  
+  const formData = getFormData();
+  if (!formData) return null;
+  
   const renderCommonFields = () => (
     <>
       <div className="space-y-2">
@@ -229,7 +334,7 @@ export const CardAddDialog: React.FC<CardAddDialogProps> = ({
         <Input
           id="title"
           value={formData.title || ''}
-          onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+          onChange={(e) => updateFormData({ title: e.target.value })}
           placeholder="Enter project title"
         />
       </div>
@@ -239,10 +344,29 @@ export const CardAddDialog: React.FC<CardAddDialogProps> = ({
         <Textarea
           id="description"
           value={formData.description || ''}
-          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          onChange={(e) => updateFormData({ description: e.target.value })}
           placeholder="Enter project description"
           rows={3}
         />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="stage">Stage</Label>
+        <Select
+          value={formData.stage as string}
+          onValueChange={handleStageChange}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select stage" />
+          </SelectTrigger>
+          <SelectContent>
+            {getPipelineStages(pipelineType).map((stage) => (
+              <SelectItem key={stage.id} value={stage.title}>
+                {stage.title}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-2">
@@ -251,9 +375,8 @@ export const CardAddDialog: React.FC<CardAddDialogProps> = ({
           id="dueDate"
           type="date"
           value={formData.dueDate ? new Date(formData.dueDate).toISOString().split('T')[0] : ''}
-          onChange={(e) => setFormData({ 
-            ...formData, 
-            dueDate: e.target.value ? new Date(e.target.value) : null 
+          onChange={(e) => updateFormData({
+            dueDate: e.target.value ? new Date(e.target.value) : null
           })}
         />
       </div>
@@ -270,9 +393,8 @@ export const CardAddDialog: React.FC<CardAddDialogProps> = ({
               id="estimateValue"
               type="number"
               value={(formData as Partial<SalesCard>).estimateValue || ''}
-              onChange={(e) => setFormData({ 
-                ...formData, 
-                estimateValue: e.target.value ? parseFloat(e.target.value) : 0 
+              onChange={(e) => updateFormData({
+                estimateValue: e.target.value ? parseFloat(e.target.value) : 0
               })}
               placeholder="0.00"
             />
@@ -285,8 +407,7 @@ export const CardAddDialog: React.FC<CardAddDialogProps> = ({
             <Label htmlFor="serviceType">Service Type</Label>
             <Select
               value={(formData as Partial<ServiceCard>).serviceType}
-              onValueChange={(value) => setFormData({ 
-                ...formData, 
+              onValueChange={(value) => updateFormData({
                 serviceType: value as 'maintenance' | 'repair' | 'upgrade'
               })}
             >
@@ -312,9 +433,8 @@ export const CardAddDialog: React.FC<CardAddDialogProps> = ({
               value={(formData as Partial<RentalCard>).eventDate 
                 ? new Date((formData as Partial<RentalCard>).eventDate!).toISOString().split('T')[0] 
                 : ''}
-              onChange={(e) => setFormData({ 
-                ...formData, 
-                eventDate: e.target.value ? new Date(e.target.value) : undefined 
+              onChange={(e) => updateFormData({
+                eventDate: e.target.value ? new Date(e.target.value) : undefined
               })}
             />
           </div>
@@ -348,7 +468,7 @@ export const CardAddDialog: React.FC<CardAddDialogProps> = ({
             <Input
               id="projectNumber"
               value={formData.projectNumber || ''}
-              onChange={(e) => setFormData({ ...formData, projectNumber: e.target.value })}
+              onChange={(e) => updateFormData({ projectNumber: e.target.value })}
               disabled
             />
           </div>

@@ -20,7 +20,7 @@ export type IntegrationStage =
   | 'Installation'
   | 'Wrap Up'
   | 'Commission'
-  | 'Ready to Invoice'
+  | 'Ready To Invoice'
   | 'Invoiced';
 
 export type ServiceStage =
@@ -31,7 +31,7 @@ export type ServiceStage =
   | 'Needs System Sales'
   | 'Needs RMA'
   | 'Needs Revisit'
-  | 'Ready to Invoice'
+  | 'Ready To Invoice'
   | 'Invoiced';
 
 export type RentalStage =
@@ -40,7 +40,7 @@ export type RentalStage =
   | 'Quoting'
   | 'Quote Sent'
   | 'Quote Accepted'
-  | 'Ready to Invoice'
+  | 'Ready To Invoice'
   | 'Invoiced';
 
 // Pipeline type discriminator
