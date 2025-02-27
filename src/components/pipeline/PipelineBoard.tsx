@@ -1,24 +1,29 @@
 import React, { useState } from 'react'
-import type { Card as CardType, Pipeline } from '../../types/pipeline'
+import type { Card as CardType, Pipeline, PipelineType } from '../../types/pipeline'
 import { PipelineColumn } from './PipelineColumn'
 import { CardEditDialog } from './CardEditDialog'
 import { Alert, AlertDescription } from '../../components/ui/alert'
 import { Skeleton } from '../../components/ui/skeleton'
+import { AddCardButton } from './AddCardButton'
 
 interface PipelineBoardProps<T extends CardType> {
   pipeline: Pipeline<T>
+  pipelineType: PipelineType
   onCardMove?: (cardId: string, sourceColumnId: string, targetColumnId: string) => void
   onCardClick?: (card: T) => void
   onCardUpdate?: (cardId: string, updatedCard: T) => void
+  onCardAdd?: (newCard: T, files: File[]) => Promise<void>
   isLoading?: boolean
   error?: string | null
 }
 
 export const PipelineBoard = <T extends CardType>({
   pipeline,
+  pipelineType,
   onCardMove,
   onCardClick,
   onCardUpdate,
+  onCardAdd,
   isLoading = false,
   error = null
 }: PipelineBoardProps<T>) => {
@@ -81,14 +86,20 @@ export const PipelineBoard = <T extends CardType>({
   // Loading state
   if (isLoading) {
     return (
-      <div className="h-full flex gap-4 p-4 overflow-x-auto">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="w-80 h-full">
-            <Skeleton className="h-12 w-full mb-4" />
-            <Skeleton className="h-32 w-full mb-2" />
-            <Skeleton className="h-32 w-full" />
-          </div>
-        ))}
+      <div className="h-full flex flex-col gap-4">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold">Pipeline</h2>
+          <Skeleton className="h-10 w-40" />
+        </div>
+        <div className="flex gap-4 p-4 overflow-x-auto h-full">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="w-80 h-full">
+              <Skeleton className="h-12 w-full mb-4" />
+              <Skeleton className="h-32 w-full mb-2" />
+              <Skeleton className="h-32 w-full" />
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
@@ -109,6 +120,20 @@ export const PipelineBoard = <T extends CardType>({
           <AlertDescription>{updateError}</AlertDescription>
         </Alert>
       )}
+      
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold">
+          {pipelineType === 'sales' ? 'Sales Pipeline' : 
+           pipelineType === 'service' ? 'Service Pipeline' :
+           pipelineType === 'rental' ? 'Rental Pipeline' : 'Integration Pipeline'}
+        </h2>
+        {onCardAdd && (
+          <AddCardButton 
+            pipelineType={pipelineType} 
+            onCardAdd={onCardAdd as (newCard: CardType, files: File[]) => Promise<void>}
+          />
+        )}
+      </div>
       
       <div className="h-full flex gap-4 p-4 overflow-x-auto">
         {pipeline.columns.map((column) => (

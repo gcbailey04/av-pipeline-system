@@ -1,9 +1,9 @@
 // src/app/api/documents/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
-import { fileStorage } from '@/lib/fileStorage';
-import { prisma } from '@/lib'; // Changed import to use the path alias
-import { Document } from '@/types/pipeline';
+import { fileStorage } from '../../../lib/fileStorage';
+import { prisma } from '../../../lib';
+import { Document } from '../../../types/pipeline';
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,8 +12,9 @@ export async function POST(request: NextRequest) {
     const projectNumber = formData.get('projectNumber') as string;
     const type = formData.get('type') as Document['type'];
     const cardId = formData.get('cardId') as string;
+    const cardType = formData.get('cardType') as string; // Added cardType parameter
     
-    if (!file || !projectNumber || !type || !cardId) {
+    if (!file || !projectNumber || !type || !cardId || !cardType) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
       type,
     });
     
-    // Save document metadata to database - use any to bypass potential type issues
+    // Save document metadata to database
     const docData: any = {
       id: document.id,
       fileName: document.fileName,
@@ -37,27 +38,44 @@ export async function POST(request: NextRequest) {
       lastModified: document.lastModified,
     };
     
-    // Dynamically set the relation field based on the card type
-    const card = await prisma.card.findUnique({
-      where: { id: cardId },
-      select: { type: true }
-    });
+    // Set the correct relation field based on the card type
+    let createdDoc;
     
-    if (!card) {
-      return NextResponse.json(
-        { error: 'Card not found' },
-        { status: 404 }
-      );
+    switch (cardType) {
+      case 'sales':
+        docData.salesCardId = cardId;
+        createdDoc = await prisma.document.create({
+          data: docData
+        });
+        break;
+        
+      case 'service':
+        docData.serviceCardId = cardId;
+        createdDoc = await prisma.document.create({
+          data: docData
+        });
+        break;
+        
+      case 'rental':
+        docData.rentalCardId = cardId;
+        createdDoc = await prisma.document.create({
+          data: docData
+        });
+        break;
+        
+      case 'integration':
+        docData.integrationCardId = cardId;
+        createdDoc = await prisma.document.create({
+          data: docData
+        });
+        break;
+        
+      default:
+        return NextResponse.json(
+          { error: 'Invalid card type' },
+          { status: 400 }
+        );
     }
-    
-    // Set the correct relation field
-    const relationField = `${card.type}CardId`;
-    docData[relationField] = cardId;
-    
-    // Create the document
-    const createdDoc = await prisma.document.create({
-      data: docData
-    });
     
     return NextResponse.json(createdDoc);
   } catch (error) {

@@ -12,18 +12,38 @@ interface PipelineCardProps<T extends CardType> {
   onEdit?: (card: T) => void
 }
 
-const getStatusColor = (lastInteraction: Date): string => {
-  const daysSinceInteraction = Math.floor((Date.now() - lastInteraction.getTime()) / (1000 * 60 * 60 * 24))
+const getStatusColor = (lastInteraction: Date | string | null | undefined): string => {
+  if (!lastInteraction) return 'bg-gray-500' // Default color if no date
+  
+  // Convert to Date object if it's a string
+  const interactionDate = typeof lastInteraction === 'string' 
+    ? new Date(lastInteraction) 
+    : lastInteraction instanceof Date 
+      ? lastInteraction 
+      : null
+  
+  if (!interactionDate || isNaN(interactionDate.getTime())) {
+    return 'bg-gray-500' // Invalid date
+  }
+  
+  const daysSinceInteraction = Math.floor((Date.now() - interactionDate.getTime()) / (1000 * 60 * 60 * 24))
   if (daysSinceInteraction >= 3) return 'bg-red-500'
   if (daysSinceInteraction >= 2) return 'bg-yellow-500'
   return 'bg-green-500'
 }
 
-const formatDate = (date: Date) => {
-  return new Date(date).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric'
-  })
+const formatDate = (date: Date | string | null | undefined) => {
+  if (!date) return 'N/A'
+  
+  try {
+    return new Date(date).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric'
+    })
+  } catch (error) {
+    console.error('Invalid date format:', date, error)
+    return 'Invalid date'
+  }
 }
 
 export const PipelineCard = <T extends CardType>({
@@ -86,20 +106,20 @@ export const PipelineCard = <T extends CardType>({
         <div className="flex flex-wrap gap-2">
           {'estimateValue' in card && (
             <Badge variant="outline">
-              ${card.estimateValue.toLocaleString()}
+              ${(card as any).estimateValue?.toLocaleString() || '0'}
             </Badge>
           )}
           {'serviceType' in card && (
             <Badge variant="outline">
-              {card.serviceType}
+              {(card as any).serviceType || 'N/A'}
             </Badge>
           )}
           {'eventDate' in card && card.eventDate && (
             <Badge variant="outline">
-              {formatDate(card.eventDate)}
+              {formatDate((card as any).eventDate)}
             </Badge>
           )}
-          {card.documents.length > 0 && (
+          {card.documents && card.documents.length > 0 && (
             <Badge variant="outline" className="flex items-center gap-1">
               <Paperclip className="h-3 w-3" />
               {card.documents.length}
@@ -114,7 +134,7 @@ export const PipelineCard = <T extends CardType>({
             Last updated: {formatDate(card.lastModified)}
           </span>
           <div className="flex gap-2">
-            {card.automationStatus.alertsSent && (
+            {card.automationStatus?.alertsSent && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger>
@@ -126,7 +146,7 @@ export const PipelineCard = <T extends CardType>({
                 </Tooltip>
               </TooltipProvider>
             )}
-            {card.automationStatus.emailLogged && (
+            {card.automationStatus?.emailLogged && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger>

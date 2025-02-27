@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs'
 import { PipelineBoard } from '../../components/pipeline/PipelineBoard'
+import { useToast } from '../../components/ui/use-toast'
 import type { 
   Pipeline, 
   SalesCard, 
@@ -14,7 +15,8 @@ import type {
   ServiceStage,
   RentalStage,
   IntegrationStage,
-  PipelineColumn
+  PipelineColumn,
+  Card
 } from '../../types/pipeline'
 
 type CardTypes = SalesCard | ServiceCard | RentalCard | IntegrationCard;
@@ -73,7 +75,16 @@ const samplePipeline: Pipeline<CardTypes> = {
         }
       ]
     },
-    // ... rest of your sample data
+    {
+      id: 'qualified',
+      title: 'Qualified',
+      cards: []
+    },
+    {
+      id: 'appointment',
+      title: 'Appointment Scheduled',
+      cards: []
+    }
   ]
 }
 
@@ -82,6 +93,7 @@ export default function PipelinePage() {
   const [pipeline, setPipeline] = useState<Pipeline<CardTypes>>(samplePipeline)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { toast } = useToast()
 
   useEffect(() => {
     fetchPipelineData(activeTab)
@@ -157,7 +169,10 @@ export default function PipelinePage() {
       })
 
       if (!response.ok) throw new Error('Failed to update card stage')
-      await fetchPipelineData(activeTab)
+      toast({
+        title: "Card moved",
+        description: "Card stage updated successfully",
+      })
     } catch (err) {
       console.error('Failed to move card:', err)
       setError('Failed to move card')
@@ -192,20 +207,93 @@ export default function PipelinePage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          type: activeTab,  // Use activeTab instead of card.type
+          type: activeTab,
           cardId,
-          cardData        // Send the card data separately
+          cardData
         }),
       })
   
       if (!response.ok) throw new Error('Failed to update card')
-      await fetchPipelineData(activeTab)
+      toast({
+        title: "Card updated",
+        description: "Card details updated successfully",
+      })
     } catch (err) {
       console.error('Failed to update card:', err)
       setError('Failed to update card')
       await fetchPipelineData(activeTab)
     }
   }
+
+  const handleCardAdd = async (newCard: CardTypes, files: File[]) => {
+    try {
+      // First column in the pipeline
+      const firstColumn = pipeline.columns[0];
+      if (!firstColumn) throw new Error('No columns in pipeline');
+      
+      // Add card to UI immediately for better UX
+      setPipeline((currentPipeline): Pipeline<CardTypes> => {
+        const updatedColumns: PipelineColumn<CardTypes>[] = currentPipeline.columns.map(column => {
+          if (column.id === firstColumn.id) {
+            return {
+              ...column,
+              cards: [...column.cards, newCard]
+            }
+          }
+          return column;
+        });
+
+        return {
+          ...currentPipeline,
+          columns: updatedColumns
+        }
+      });
+
+      // Send to API
+      const response = await fetch('/api/pipeline', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(newCard),
+      });
+
+      if (!response.ok) throw new Error('Failed to create card');
+      
+      // Upload files if any
+      if (files.length > 0) {
+        await Promise.all(files.map(async (file) => {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('projectNumber', newCard.projectNumber);
+          formData.append('type', 'documentation');
+          formData.append('cardId', newCard.id);
+          formData.append('cardType', newCard.type);
+          
+          const fileResponse = await fetch('/api/documents', {
+            method: 'POST',
+            body: formData,
+          });
+          
+          if (!fileResponse.ok) {
+            console.error('Failed to upload file', file.name);
+          }
+        }));
+      }
+      
+      toast({
+        title: "Card created",
+        description: "New card added successfully",
+      });
+      
+      // Refresh pipeline data
+      await fetchPipelineData(activeTab);
+    } catch (err) {
+      console.error('Failed to add card:', err);
+      setError('Failed to add card');
+      await fetchPipelineData(activeTab);
+    }
+  };
 
   const handleCardClick = (card: CardTypes) => {
     console.log('Card clicked:', card)
@@ -228,9 +316,11 @@ export default function PipelinePage() {
           <TabsContent value={activeTab} forceMount>
             <PipelineBoard
               pipeline={pipeline}
+              pipelineType={activeTab}
               onCardMove={handleCardMove}
               onCardClick={handleCardClick}
               onCardUpdate={handleCardUpdate}
+              onCardAdd={handleCardAdd}
               isLoading={loading}
               error={error}
             />
