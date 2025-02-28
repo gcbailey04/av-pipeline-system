@@ -162,8 +162,11 @@ export default function PipelinePage() {
       const sourceColumn = pipeline.columns.find(col => col.id === sourceColumnId);
       if (!sourceColumn) throw new Error("Source column not found");
       
-      const cardToMove = sourceColumn.cards.find(card => card.id === cardId);
-      if (!cardToMove) throw new Error("Card not found");
+      const cardToMoveIndex = sourceColumn.cards.findIndex(card => card.id === cardId);
+      if (cardToMoveIndex === -1) throw new Error("Card not found");
+      
+      // Get a reference to the card
+      const cardToMove = sourceColumn.cards[cardToMoveIndex];
       
       // Find the target column title (not the ID)
       const targetColumn = pipeline.columns.find(col => col.id === targetColumnId);
@@ -178,86 +181,58 @@ export default function PipelinePage() {
             return {
               ...column,
               cards: column.cards.filter(card => card.id !== cardId)
-            }
+            };
           }
-          if (column.id === targetColumnId && cardToMove) {
-            // Create updated card with the correct stage type
-            const typedStage = convertToTypedStage(activeTab, targetColumn.title);
+          
+          if (column.id === targetColumnId) {
+            // Create updated card based on detected type
             let updatedCard: CardTypes;
             
-            // Create a base object with common properties
-            const baseCard = {
-              id: cardToMove.id,
-              customerId: cardToMove.customerId,
-              projectNumber: cardToMove.projectNumber,
-              title: cardToMove.title,
-              description: cardToMove.description,
-              createdAt: cardToMove.createdAt,
-              dueDate: cardToMove.dueDate,
-              lastInteraction: cardToMove.lastInteraction,
-              documents: cardToMove.documents,
-              automationStatus: cardToMove.automationStatus,
-              lastModified: new Date()
-            };
-            
-            switch (cardToMove.type) {
-              case 'sales':
-                updatedCard = {
-                  ...baseCard,
-                  type: 'sales',
-                  stage: typedStage as SalesStage,
-                  estimateValue: (cardToMove as SalesCard).estimateValue,
-                  appointmentDate: (cardToMove as SalesCard).appointmentDate,
-                  proposalSentDate: (cardToMove as SalesCard).proposalSentDate
-                };
-                break;
-              case 'service':
-                updatedCard = {
-                  ...baseCard,
-                  type: 'service',
-                  stage: typedStage as ServiceStage,
-                  serviceType: (cardToMove as ServiceCard).serviceType,
-                  rmaNumber: (cardToMove as ServiceCard).rmaNumber,
-                  partsRequired: (cardToMove as ServiceCard).partsRequired
-                };
-                break;
-              case 'rental':
-                updatedCard = {
-                  ...baseCard,
-                  type: 'rental',
-                  stage: typedStage as RentalStage,
-                  eventDate: (cardToMove as RentalCard).eventDate,
-                  equipmentList: (cardToMove as RentalCard).equipmentList,
-                  quoteValue: (cardToMove as RentalCard).quoteValue
-                };
-                break;
-              case 'integration':
-                updatedCard = {
-                  ...baseCard,
-                  type: 'integration',
-                  stage: typedStage as IntegrationStage,
-                  salesCardId: (cardToMove as IntegrationCard).salesCardId,
-                  equipmentStatus: (cardToMove as IntegrationCard).equipmentStatus,
-                  installationDate: (cardToMove as IntegrationCard).installationDate
-                };
-                break;
-              default:
-                throw new Error(`Invalid card type: ${cardToMove.type}`);
+            // The type-safe approach: check specific properties to determine card type
+            if ('estimateValue' in cardToMove) {
+              // This is a SalesCard
+              updatedCard = {
+                ...cardToMove,
+                stage: convertToTypedStage('sales', targetColumn.title) as SalesStage,
+                lastModified: new Date()
+              } as SalesCard;
+            } else if ('serviceType' in cardToMove) {
+              // This is a ServiceCard
+              updatedCard = {
+                ...cardToMove,
+                stage: convertToTypedStage('service', targetColumn.title) as ServiceStage,
+                lastModified: new Date()
+              } as ServiceCard;
+            } else if ('quoteValue' in cardToMove) {
+              // This is a RentalCard
+              updatedCard = {
+                ...cardToMove,
+                stage: convertToTypedStage('rental', targetColumn.title) as RentalStage,
+                lastModified: new Date()
+              } as RentalCard;
+            } else {
+              // This is an IntegrationCard
+              updatedCard = {
+                ...cardToMove,
+                stage: convertToTypedStage('integration', targetColumn.title) as IntegrationStage,
+                lastModified: new Date()
+              } as IntegrationCard;
             }
             
             return {
               ...column,
               cards: [...column.cards, updatedCard]
-            }
+            };
           }
-          return column
-        })
+          
+          return column;
+        });
   
         return {
           ...currentPipeline,
           columns: updatedColumns
-        }
-      })
+        };
+      });
   
       // Then send to API
       const response = await fetch('/api/pipeline', {
@@ -270,27 +245,27 @@ export default function PipelinePage() {
           cardId,
           stage: targetColumn.title
         }),
-      })
-  
+      });
+      
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to update card stage')
+        throw new Error(errorData.error || 'Failed to update card stage');
       }
       
       toast({
         title: "Card moved",
         description: "Card stage updated successfully",
-      })
+      });
     } catch (err) {
-      console.error('Failed to move card:', err)
+      console.error('Failed to move card:', err);
       toast({
         title: "Error",
         description: err instanceof Error ? err.message : 'Failed to move card',
         variant: "destructive"
-      })
+      });
       
       // Revert the optimistic update by refreshing
-      await fetchPipelineData(activeTab)
+      await fetchPipelineData(activeTab);
     }
   }
   
@@ -300,35 +275,35 @@ export default function PipelinePage() {
     try {
       // First update UI (optimistic update)
       setPipeline((currentPipeline): Pipeline<CardTypes> | null => {
-  if (!currentPipeline) return null;
-  
-  const updatedColumns: PipelineColumn<CardTypes>[] = currentPipeline.columns.map(column => {
-    // Create a new array of cards with the updated card
-    const updatedCards = column.cards.map(card => {
-      if (card.id === cardId) {
-        // Make sure updatedCard is treated as the correct type
-        const cardWithUpdatedTime = {
-          ...updatedCard,
-          lastModified: new Date()
-        };
-        return cardWithUpdatedTime;
-      }
-      return card;
-    });
-    
-    // Return a new column with the updated cards
-    return {
-      ...column,
-      cards: updatedCards
-    };
-  });
+        if (!currentPipeline) return null;
+        
+        const updatedColumns: PipelineColumn<CardTypes>[] = currentPipeline.columns.map(column => {
+          // Create a new array of cards with the updated card
+          const updatedCards = column.cards.map(card => {
+            if (card.id === cardId) {
+              // Make sure updatedCard is treated as the correct type
+              const cardWithUpdatedTime = {
+                ...updatedCard,
+                lastModified: new Date()
+              };
+              return cardWithUpdatedTime;
+            }
+            return card;
+          });
+          
+          // Return a new column with the updated cards
+          return {
+            ...column,
+            cards: updatedCards
+          };
+        });
 
-  // Return a new pipeline with the updated columns
-  return {
-    ...currentPipeline,
-    columns: updatedColumns
-  };
-});
+        // Return a new pipeline with the updated columns
+        return {
+          ...currentPipeline,
+          columns: updatedColumns
+        };
+      });
   
       // Then send to API
       const response = await fetch('/api/pipeline/cards', {
@@ -337,27 +312,27 @@ export default function PipelinePage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(updatedCard),
-      })
+      });
   
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to update card')
+        throw new Error(errorData.error || 'Failed to update card');
       }
       
       toast({
         title: "Card updated",
         description: "Card details updated successfully",
-      })
+      });
     } catch (err) {
-      console.error('Failed to update card:', err)
+      console.error('Failed to update card:', err);
       toast({
         title: "Error",
         description: err instanceof Error ? err.message : 'Failed to update card',
         variant: "destructive"
-      })
+      });
       
       // Revert the optimistic update by refreshing
-      await fetchPipelineData(activeTab)
+      await fetchPipelineData(activeTab);
     }
   }
 
@@ -420,7 +395,7 @@ export default function PipelinePage() {
   };
 
   const handleCardClick = (card: CardTypes) => {
-    console.log('Card clicked:', card)
+    console.log('Card clicked:', card);
     // You could open a detailed view or expanded information panel here
   }
 
