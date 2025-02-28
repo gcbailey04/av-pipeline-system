@@ -2,8 +2,9 @@
 
 import { NextResponse } from 'next/server';
 import { prisma } from '../../../lib';
-import { PipelineType, Card } from '../../../types/pipeline';
+import { PipelineType } from '../../../types/pipeline';
 import { getPipelineStages } from '../../../lib/column-helpers';
+import { prismaToCard, cardToPrismaInput } from '../../../lib/card-helpers';
 
 // Create mock data for fallback
 const createMockData = (): Record<PipelineType, Array<{id: string; title: string; cards: any[]}>> => {
@@ -90,20 +91,8 @@ export async function GET(request: Request) {
         throw new Error(`Invalid pipeline type: ${type}`);
     }
     
-    // Map database cards to application cards
-    const mappedCards = cards.map(dbCard => {
-      // Add common type field needed by frontend
-      return {
-        ...dbCard,
-        type,
-        // Map the automation status fields
-        automationStatus: {
-          emailLogged: dbCard.emailLogged || false,
-          alertsSent: dbCard.alertsSent || false,
-          documentsGenerated: dbCard.documentsGenerated || false
-        }
-      };
-    });
+    // Map database cards to application cards using helper function
+    const mappedCards = cards.map(dbCard => prismaToCard(dbCard, type));
     
     // Group cards by stage
     const stages = getPipelineStages(type);
@@ -124,7 +113,7 @@ export async function GET(request: Request) {
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
     
     // Fallback to mock data on error
-    console.log('Falling back to mock data');
+    console.log('Falling back to mock data:', errorMessage);
     return NextResponse.json(mockData[type]);
   }
 }
@@ -164,13 +153,9 @@ export async function POST(request: Request) {
       }
     }
 
-    // Remove automationStatus and documents as they're handled differently in the database
-    const { automationStatus, documents, ...cardData } = data;
-    const automationFields = {
-      emailLogged: automationStatus?.emailLogged || false,
-      alertsSent: automationStatus?.alertsSent || false,
-      documentsGenerated: automationStatus?.documentsGenerated || false,
-    };
+    // Convert card to Prisma format
+    const fullCard = { ...data, type: validType };
+    const prismaData = cardToPrismaInput(fullCard);
 
     // Create card based on type
     let createdCard;
@@ -178,10 +163,7 @@ export async function POST(request: Request) {
     switch (validType) {
       case 'sales':
         createdCard = await prisma.salesCard.create({
-          data: {
-            ...cardData,
-            ...automationFields,
-          },
+          data: prismaData,
           include: {
             documents: true,
             customer: true
@@ -191,10 +173,7 @@ export async function POST(request: Request) {
         
       case 'integration':
         createdCard = await prisma.integrationCard.create({
-          data: {
-            ...cardData,
-            ...automationFields,
-          },
+          data: prismaData,
           include: {
             documents: true,
             customer: true,
@@ -205,10 +184,7 @@ export async function POST(request: Request) {
         
       case 'service':
         createdCard = await prisma.serviceCard.create({
-          data: {
-            ...cardData,
-            ...automationFields,
-          },
+          data: prismaData,
           include: {
             documents: true,
             customer: true
@@ -218,10 +194,7 @@ export async function POST(request: Request) {
         
       case 'rental':
         createdCard = await prisma.rentalCard.create({
-          data: {
-            ...cardData,
-            ...automationFields,
-          },
+          data: prismaData,
           include: {
             documents: true,
             customer: true
@@ -233,16 +206,8 @@ export async function POST(request: Request) {
         throw new Error(`Invalid card type: ${validType}`);
     }
     
-    // Map to application card format
-    const responseCard = {
-      ...createdCard,
-      type: validType,
-      automationStatus: {
-        emailLogged: createdCard.emailLogged || false,
-        alertsSent: createdCard.alertsSent || false,
-        documentsGenerated: createdCard.documentsGenerated || false
-      }
-    };
+    // Convert database card back to application model
+    const responseCard = prismaToCard(createdCard, validType);
 
     return NextResponse.json(responseCard);
   } catch (error) {
@@ -339,33 +304,20 @@ export async function PATCH(request: Request) {
           throw new Error(`Invalid card type: ${validType}`);
       }
       
-      // Map to application card format
-      const responseCard = {
-        ...updatedCard,
-        type: validType,
-        automationStatus: {
-          emailLogged: updatedCard.emailLogged || false,
-          alertsSent: updatedCard.alertsSent || false,
-          documentsGenerated: updatedCard.documentsGenerated || false
-        }
-      };
+      // Convert database card back to application model
+      const responseCard = prismaToCard(updatedCard, validType);
       
       return NextResponse.json(responseCard);
     }
     
     // Handle full card update
     if (cardData) {
-      // Remove fields that shouldn't be updated directly
-      const { id, type: dataType, customerId, projectNumber, createdAt, documents, automationStatus, ...updateData } = cardData;
+      // Add type to cardData for conversion
+      const fullCard = { ...cardData, type: validType };
+      const prismaData = cardToPrismaInput(fullCard);
       
-      // Add lastModified timestamp
-      const updates = {
-        ...updateData,
-        lastModified: new Date(),
-        emailLogged: automationStatus?.emailLogged || false,
-        alertsSent: automationStatus?.alertsSent || false,
-        documentsGenerated: automationStatus?.documentsGenerated || false,
-      };
+      // Remove fields that shouldn't be updated directly
+      const { id, customerId, projectNumber, createdAt, ...updateData } = prismaData;
       
       let updatedCard;
       
@@ -373,7 +325,10 @@ export async function PATCH(request: Request) {
         case 'sales':
           updatedCard = await prisma.salesCard.update({
             where: { id: cardId },
-            data: updates,
+            data: {
+              ...updateData,
+              lastModified: new Date()
+            },
             include: {
               documents: true,
               customer: true
@@ -384,7 +339,10 @@ export async function PATCH(request: Request) {
         case 'integration':
           updatedCard = await prisma.integrationCard.update({
             where: { id: cardId },
-            data: updates,
+            data: {
+              ...updateData,
+              lastModified: new Date()
+            },
             include: {
               documents: true,
               customer: true,
@@ -396,7 +354,10 @@ export async function PATCH(request: Request) {
         case 'service':
           updatedCard = await prisma.serviceCard.update({
             where: { id: cardId },
-            data: updates,
+            data: {
+              ...updateData,
+              lastModified: new Date()
+            },
             include: {
               documents: true,
               customer: true
@@ -407,7 +368,10 @@ export async function PATCH(request: Request) {
         case 'rental':
           updatedCard = await prisma.rentalCard.update({
             where: { id: cardId },
-            data: updates,
+            data: {
+              ...updateData,
+              lastModified: new Date()
+            },
             include: {
               documents: true,
               customer: true
@@ -419,16 +383,8 @@ export async function PATCH(request: Request) {
           throw new Error(`Invalid card type: ${validType}`);
       }
       
-      // Map to application card format
-      const responseCard = {
-        ...updatedCard,
-        type: validType,
-        automationStatus: {
-          emailLogged: updatedCard.emailLogged || false,
-          alertsSent: updatedCard.alertsSent || false,
-          documentsGenerated: updatedCard.documentsGenerated || false
-        }
-      };
+      // Convert database card back to application model
+      const responseCard = prismaToCard(updatedCard, validType);
       
       return NextResponse.json(responseCard);
     }

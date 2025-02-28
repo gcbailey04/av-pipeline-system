@@ -14,13 +14,12 @@ import type {
   } from '../types/pipeline';
   
   /**
-   * Converts application Card models to Prisma-compatible input data
+   * Converts application Card models to Prisma-compatible input data for each specific card type
    */
-  export function cardToPrismaInput(card: Card) {
-    // Extract common fields to remove from specific inputs
+  export function cardToPrismaInput(card: Card): any {
+    // Extract common fields
     const { 
       type, 
-      id, 
       documents, 
       automationStatus, 
       ...commonFields 
@@ -37,44 +36,52 @@ import type {
     switch (type) {
       case 'sales': {
         const salesCard = card as SalesCard;
+        const { estimateValue, appointmentDate, proposalSentDate, ...rest } = salesCard;
+        
         return {
-          ...commonFields,
+          ...rest,
           ...automationFields,
-          estimateValue: salesCard.estimateValue || 0,
-          appointmentDate: salesCard.appointmentDate,
-          proposalSentDate: salesCard.proposalSentDate,
+          estimateValue: estimateValue || 0,
+          appointmentDate: appointmentDate,
+          proposalSentDate: proposalSentDate,
         };
       }
       case 'service': {
         const serviceCard = card as ServiceCard;
+        const { serviceType, rmaNumber, partsRequired, ...rest } = serviceCard;
+        
         return {
-          ...commonFields,
+          ...rest,
           ...automationFields,
-          serviceType: serviceCard.serviceType || 'maintenance',
-          rmaNumber: serviceCard.rmaNumber,
-          partsRequired: serviceCard.partsRequired || [],
+          serviceType: serviceType || 'maintenance',
+          rmaNumber: rmaNumber,
+          partsRequired: partsRequired || [],
         };
       }
       case 'rental': {
         const rentalCard = card as RentalCard;
+        const { quoteValue, eventDate, equipmentList, ...rest } = rentalCard;
+        
         return {
-          ...commonFields,
+          ...rest,
           ...automationFields,
-          quoteValue: rentalCard.quoteValue || 0,
-          eventDate: rentalCard.eventDate,
-          equipmentList: rentalCard.equipmentList || [],
+          quoteValue: quoteValue || 0,
+          eventDate: eventDate,
+          equipmentList: equipmentList || [],
         };
       }
       case 'integration': {
         const integrationCard = card as IntegrationCard;
+        const { salesCardId, equipmentStatus, installationDate, ...rest } = integrationCard;
+        
         return {
-          ...commonFields,
+          ...rest,
           ...automationFields,
-          salesCardId: integrationCard.salesCardId,
-          equipmentOrdered: integrationCard.equipmentStatus?.ordered || false,
-          equipmentReceived: integrationCard.equipmentStatus?.received || false,
-          installedDate: integrationCard.equipmentStatus?.installedDate,
-          installationDate: integrationCard.installationDate,
+          salesCardId: salesCardId,
+          equipmentOrdered: equipmentStatus?.ordered || false,
+          equipmentReceived: equipmentStatus?.received || false,
+          installedDate: equipmentStatus?.installedDate,
+          installationDate: installationDate,
         };
       }
       default:

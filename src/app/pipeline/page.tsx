@@ -185,41 +185,64 @@ export default function PipelinePage() {
             const typedStage = convertToTypedStage(activeTab, targetColumn.title);
             let updatedCard: CardTypes;
             
+            // Create a base object with common properties
+            const baseCard = {
+              id: cardToMove.id,
+              customerId: cardToMove.customerId,
+              projectNumber: cardToMove.projectNumber,
+              title: cardToMove.title,
+              description: cardToMove.description,
+              createdAt: cardToMove.createdAt,
+              dueDate: cardToMove.dueDate,
+              lastInteraction: cardToMove.lastInteraction,
+              documents: cardToMove.documents,
+              automationStatus: cardToMove.automationStatus,
+              lastModified: new Date()
+            };
+            
             switch (cardToMove.type) {
               case 'sales':
                 updatedCard = {
-                  ...cardToMove,
+                  ...baseCard,
+                  type: 'sales',
                   stage: typedStage as SalesStage,
-                  lastModified: new Date()
+                  estimateValue: (cardToMove as SalesCard).estimateValue,
+                  appointmentDate: (cardToMove as SalesCard).appointmentDate,
+                  proposalSentDate: (cardToMove as SalesCard).proposalSentDate
                 };
                 break;
               case 'service':
                 updatedCard = {
-                  ...cardToMove,
+                  ...baseCard,
+                  type: 'service',
                   stage: typedStage as ServiceStage,
-                  lastModified: new Date()
+                  serviceType: (cardToMove as ServiceCard).serviceType,
+                  rmaNumber: (cardToMove as ServiceCard).rmaNumber,
+                  partsRequired: (cardToMove as ServiceCard).partsRequired
                 };
                 break;
               case 'rental':
                 updatedCard = {
-                  ...cardToMove,
+                  ...baseCard,
+                  type: 'rental',
                   stage: typedStage as RentalStage,
-                  lastModified: new Date()
+                  eventDate: (cardToMove as RentalCard).eventDate,
+                  equipmentList: (cardToMove as RentalCard).equipmentList,
+                  quoteValue: (cardToMove as RentalCard).quoteValue
                 };
                 break;
               case 'integration':
                 updatedCard = {
-                  ...cardToMove,
+                  ...baseCard,
+                  type: 'integration',
                   stage: typedStage as IntegrationStage,
-                  lastModified: new Date()
+                  salesCardId: (cardToMove as IntegrationCard).salesCardId,
+                  equipmentStatus: (cardToMove as IntegrationCard).equipmentStatus,
+                  installationDate: (cardToMove as IntegrationCard).installationDate
                 };
                 break;
               default:
-                updatedCard = {
-                  ...cardToMove,
-                  stage: typedStage as any,
-                  lastModified: new Date()
-                };
+                throw new Error(`Invalid card type: ${cardToMove.type}`);
             }
             
             return {
@@ -229,13 +252,13 @@ export default function PipelinePage() {
           }
           return column
         })
-
+  
         return {
           ...currentPipeline,
           columns: updatedColumns
         }
       })
-
+  
       // Then send to API
       const response = await fetch('/api/pipeline', {
         method: 'PATCH',
@@ -248,7 +271,7 @@ export default function PipelinePage() {
           stage: targetColumn.title
         }),
       })
-
+  
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to update card stage')
@@ -270,30 +293,42 @@ export default function PipelinePage() {
       await fetchPipelineData(activeTab)
     }
   }
-
+  
   const handleCardUpdate = async (cardId: string, updatedCard: CardTypes) => {
     if (!pipeline) return;
     
     try {
       // First update UI (optimistic update)
       setPipeline((currentPipeline): Pipeline<CardTypes> | null => {
-        if (!currentPipeline) return null;
-        
-        const updatedColumns: PipelineColumn<CardTypes>[] = currentPipeline.columns.map(column => ({
-          ...column,
-          cards: column.cards.map(card => 
-            card.id === cardId ? {
-              ...updatedCard,
-              lastModified: new Date()
-            } : card
-          )
-        }))
+  if (!currentPipeline) return null;
   
-        return {
-          ...currentPipeline,
-          columns: updatedColumns
-        }
-      })
+  const updatedColumns: PipelineColumn<CardTypes>[] = currentPipeline.columns.map(column => {
+    // Create a new array of cards with the updated card
+    const updatedCards = column.cards.map(card => {
+      if (card.id === cardId) {
+        // Make sure updatedCard is treated as the correct type
+        const cardWithUpdatedTime = {
+          ...updatedCard,
+          lastModified: new Date()
+        };
+        return cardWithUpdatedTime;
+      }
+      return card;
+    });
+    
+    // Return a new column with the updated cards
+    return {
+      ...column,
+      cards: updatedCards
+    };
+  });
+
+  // Return a new pipeline with the updated columns
+  return {
+    ...currentPipeline,
+    columns: updatedColumns
+  };
+});
   
       // Then send to API
       const response = await fetch('/api/pipeline/cards', {

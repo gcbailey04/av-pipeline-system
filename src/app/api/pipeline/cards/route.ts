@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '../../../../lib';
 import { Card, PipelineType, SalesCard, ServiceCard, RentalCard, IntegrationCard } from '../../../../types/pipeline';
+import { cardToPrismaInput, prismaToCard } from '../../../../lib/card-helpers';
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,14 +28,6 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Pre-process automation status since it's stored differently in the database
-    const { automationStatus, documents: cardDocuments, type, ...processedCard } = card;
-    const automationFields = {
-      emailLogged: automationStatus?.emailLogged || false,
-      alertsSent: automationStatus?.alertsSent || false,
-      documentsGenerated: automationStatus?.documentsGenerated || false,
-    };
-    
     // Check if customer exists, create if it doesn't
     let customer = await prisma.customer.findUnique({
       where: { id: card.customerId }
@@ -54,73 +47,43 @@ export async function POST(request: NextRequest) {
       });
     }
     
+    // Convert card to Prisma format for the specific type
+    const prismaData = cardToPrismaInput(card);
+    
     switch (cardType) {
-      case 'sales': {
-        const { estimateValue, appointmentDate, proposalSentDate, ...commonFields } = processedCard;
+      case 'sales':
         createdCard = await prisma.salesCard.create({
-          data: {
-            ...commonFields,
-            ...automationFields,
-            estimateValue: estimateValue || 0,
-            appointmentDate: appointmentDate,
-            proposalSentDate: proposalSentDate,
-          },
+          data: prismaData,
           include: {
             documents: true,
             customer: true
           }
         });
         break;
-      }
         
-      case 'service': {
-        const { serviceType, rmaNumber, partsRequired, ...commonFields } = processedCard as ServiceCard;
+      case 'service':
         createdCard = await prisma.serviceCard.create({
-          data: {
-            ...commonFields,
-            ...automationFields,
-            serviceType: serviceType || 'maintenance',
-            rmaNumber: rmaNumber,
-            partsRequired: partsRequired || [],
-          },
+          data: prismaData,
           include: {
             documents: true,
             customer: true
           }
         });
         break;
-      }
         
-      case 'rental': {
-        const { quoteValue, eventDate, equipmentList, ...commonFields } = processedCard as RentalCard;
+      case 'rental':
         createdCard = await prisma.rentalCard.create({
-          data: {
-            ...commonFields,
-            ...automationFields,
-            quoteValue: quoteValue || 0,
-            eventDate: eventDate,
-            equipmentList: equipmentList || [],
-          },
+          data: prismaData,
           include: {
             documents: true,
             customer: true
           }
         });
         break;
-      }
         
-      case 'integration': {
-        const { salesCardId, equipmentStatus, installationDate, ...commonFields } = processedCard as IntegrationCard;
+      case 'integration':
         createdCard = await prisma.integrationCard.create({
-          data: {
-            ...commonFields,
-            ...automationFields,
-            salesCardId: salesCardId || '',
-            equipmentOrdered: equipmentStatus?.ordered || false,
-            equipmentReceived: equipmentStatus?.received || false,
-            installedDate: equipmentStatus?.installedDate,
-            installationDate: installationDate,
-          },
+          data: prismaData,
           include: {
             documents: true,
             customer: true,
@@ -128,22 +91,13 @@ export async function POST(request: NextRequest) {
           }
         });
         break;
-      }
         
       default:
         throw new Error(`Invalid card type: ${cardType}`);
     }
     
-    // Transform back to our application model
-    const responseCard = {
-      ...createdCard,
-      type: cardType,
-      automationStatus: {
-        emailLogged: createdCard.emailLogged,
-        alertsSent: createdCard.alertsSent,
-        documentsGenerated: createdCard.documentsGenerated
-      },
-    };
+    // Convert database card back to application model
+    const responseCard = prismaToCard(createdCard, cardType as PipelineType);
     
     return NextResponse.json(responseCard);
   } catch (error: any) {
@@ -179,25 +133,16 @@ export async function PUT(request: NextRequest) {
       );
     }
     
-    // Pre-process automation status since it's stored differently in the database
-    const { automationStatus, documents, id, type, customerId, projectNumber, createdAt, ...updateData } = card;
-    const automationFields = {
-      emailLogged: automationStatus?.emailLogged || false,
-      alertsSent: automationStatus?.alertsSent || false,
-      documentsGenerated: automationStatus?.documentsGenerated || false,
-    };
+    // Convert card to Prisma format - we'll destructure id and other fields that shouldn't be updated
+    const prismaData = cardToPrismaInput(card);
+    const { id, customerId, projectNumber, createdAt, ...updateData } = prismaData;
     
     switch (cardType) {
-      case 'sales': {
-        const { estimateValue, appointmentDate, proposalSentDate, ...commonFields } = updateData as Partial<SalesCard>;
+      case 'sales':
         updatedCard = await prisma.salesCard.update({
           where: { id: card.id },
           data: {
-            ...commonFields,
-            ...automationFields,
-            ...(estimateValue !== undefined && { estimateValue }),
-            ...(appointmentDate !== undefined && { appointmentDate }),
-            ...(proposalSentDate !== undefined && { proposalSentDate }),
+            ...updateData,
             lastModified: new Date()
           },
           include: {
@@ -206,18 +151,12 @@ export async function PUT(request: NextRequest) {
           }
         });
         break;
-      }
         
-      case 'service': {
-        const { serviceType, rmaNumber, partsRequired, ...commonFields } = updateData as Partial<ServiceCard>;
+      case 'service':
         updatedCard = await prisma.serviceCard.update({
           where: { id: card.id },
           data: {
-            ...commonFields,
-            ...automationFields,
-            ...(serviceType !== undefined && { serviceType }),
-            ...(rmaNumber !== undefined && { rmaNumber }),
-            ...(partsRequired !== undefined && { partsRequired }),
+            ...updateData,
             lastModified: new Date()
           },
           include: {
@@ -226,18 +165,12 @@ export async function PUT(request: NextRequest) {
           }
         });
         break;
-      }
         
-      case 'rental': {
-        const { quoteValue, eventDate, equipmentList, ...commonFields } = updateData as Partial<RentalCard>;
+      case 'rental':
         updatedCard = await prisma.rentalCard.update({
           where: { id: card.id },
           data: {
-            ...commonFields,
-            ...automationFields,
-            ...(quoteValue !== undefined && { quoteValue }),
-            ...(eventDate !== undefined && { eventDate }),
-            ...(equipmentList !== undefined && { equipmentList }),
+            ...updateData,
             lastModified: new Date()
           },
           include: {
@@ -246,20 +179,12 @@ export async function PUT(request: NextRequest) {
           }
         });
         break;
-      }
         
-      case 'integration': {
-        const { salesCardId, equipmentStatus, installationDate, ...commonFields } = updateData as Partial<IntegrationCard>;
+      case 'integration':
         updatedCard = await prisma.integrationCard.update({
           where: { id: card.id },
           data: {
-            ...commonFields,
-            ...automationFields,
-            ...(salesCardId !== undefined && { salesCardId }),
-            ...(equipmentStatus?.ordered !== undefined && { equipmentOrdered: equipmentStatus.ordered }),
-            ...(equipmentStatus?.received !== undefined && { equipmentReceived: equipmentStatus.received }),
-            ...(equipmentStatus?.installedDate !== undefined && { installedDate: equipmentStatus.installedDate }),
-            ...(installationDate !== undefined && { installationDate }),
+            ...updateData,
             lastModified: new Date()
           },
           include: {
@@ -269,25 +194,13 @@ export async function PUT(request: NextRequest) {
           }
         });
         break;
-      }
         
       default:
         throw new Error(`Invalid card type: ${cardType}`);
     }
     
-    // Transform back to our application model
-    const responseCard = {
-      ...updatedCard,
-      id: card.id,
-      type: cardType,
-      customerId: updatedCard.customerId,
-      projectNumber: updatedCard.projectNumber,
-      automationStatus: {
-        emailLogged: updatedCard.emailLogged,
-        alertsSent: updatedCard.alertsSent,
-        documentsGenerated: updatedCard.documentsGenerated
-      },
-    };
+    // Convert database card back to application model
+    const responseCard = prismaToCard(updatedCard, cardType as PipelineType);
     
     return NextResponse.json(responseCard);
   } catch (error: any) {
