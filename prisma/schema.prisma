@@ -1,156 +1,359 @@
-// prisma/schema.prisma
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
 
+// datasource block specifies the database connection settings
+datasource db {
+  provider = "postgresql"
+  // Make sure this url points to your database connection string
+  // Usually loaded from an environment variable
+  url      = env("DATABASE_URL")
+}
+
+// generator block specifies the Prisma Client generation settings
 generator client {
   provider = "prisma-client-js"
 }
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+// Enums define allowed sets of values for specific fields
+
+enum PipelineType {
+  SALES
+  DESIGN
+  INTEGRATION
+  SERVICE // Added for future planning
+  REPAIR  // Added for future planning
+  RENTAL  // Added for future planning
 }
 
-// Customer model
-model Customer {
-  id               String    @id @default(cuid())
-  name             String
-  isReturnCustomer Boolean   @default(false)
-  lastInteraction  DateTime
-  email           String
-  phone           String
-  address         String
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  
-  // Relations
-  salesCards      SalesCard[]
-  serviceCards    ServiceCard[]
-  rentalCards     RentalCard[]
-  integrationCards IntegrationCard[]
+// Note: Stage names are generalized here. We might need more specific enums
+// or allow free text later if stages vary drastically per type.
+enum PipelineStage {
+  // Sales Stages
+  NEW_LEAD
+  QUALIFIED
+  APPOINTMENT_SCHEDULED
+  APPOINTMENT_COMPLETE // Handoff to Design happens here
+  PROPOSAL // Design results feed into this
+  PROPOSAL_SENT
+  REVISIONS
+  WON // Handoff to Integration happens here
+  LOST
+
+  // Design Stages
+  NEW_DESIGN
+  DESIGN_STARTED
+  DESIGN_VERIFICATION
+  DESIGN_COMPLETE // Triggers update back to Sales
+
+  // Integration Stages
+  APPROVED
+  DEPOSIT_INVOICE_SENT
+  DEPOSIT_INVOICE_PAID
+  EQUIPMENT_ORDERED
+  EQUIPMENT_RECEIVED
+  SCHEDULED
+  INSTALLATION
+  COMMISSIONING // Changed from Commission
+  INVOICE // Stage for Final Invoice Sent
+  INTEGRATION_COMPLETE // Renamed for clarity
+
+  // Placeholder Stages for Future Pipelines
+  SERVICE_REQUEST
+  SERVICE_SCHEDULED
+  SERVICE_IN_PROGRESS
+  SERVICE_COMPLETE // Branches off from here potentially
+
+  REPAIR_REQUEST
+  REPAIR_SHIPPED_TO_VENDOR
+  REPAIR_IN_PROGRESS
+  REPAIR_RETURNED
+  REPAIR_COMPLETE
+
+  RENTAL_REQUEST
+  RENTAL_QUOTE_SENT
+  RENTAL_ACCEPTED
+  RENTAL_SCHEDULED
+  RENTAL_OUT
+  RENTAL_RETURNED
+  RENTAL_INVOICED
+  RENTAL_COMPLETE
 }
 
-// Document model
-model Document {
+enum PipelineStatus {
+  OPEN       // Actively being worked on
+  ON_HOLD    // Temporarily paused
+  WAITING_DESIGN // Special status for Sales card waiting on Design
+  CLOSED     // Finished, Lost, Cancelled, or Handed Off
+}
+
+
+// ==================================
+// Authentication Models (NextAuth)
+// ==================================
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model User {
   id            String    @id @default(cuid())
-  fileName      String
-  path          String
-  type          String    // 'estimate' | 'co' | 'photo' | 'documentation' | 'programming'
-  uploadDate    DateTime  @default(now())
-  lastModified  DateTime  @updatedAt
-  
-  // Relations
-  salesCard        SalesCard?    @relation(fields: [salesCardId], references: [id])
-  salesCardId      String?
-  serviceCard      ServiceCard?  @relation(fields: [serviceCardId], references: [id])
-  serviceCardId    String?
-  rentalCard       RentalCard?   @relation(fields: [rentalCardId], references: [id])
-  rentalCardId     String?
-  integrationCard  IntegrationCard? @relation(fields: [integrationCardId], references: [id])
-  integrationCardId String?
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  role          String?   @default("user") // Basic role for now
+  accounts      Account[]
+  sessions      Session[]
+
+  // User's direct assignments / uploads
+  assignedPipelineCards PipelineCard[] @relation("AssignedCards")
+  uploadedDocuments     Document[]     @relation("UploadedDocuments")
+
+  // Explicit inverse relations for Detail assignments
+  managedIntegrationDetails IntegrationCardDetails[] @relation("ProjectManagerAssignments")
+  leadTechIntegrationDetails IntegrationCardDetails[] @relation("LeadTechnicianAssignments")
+  designDetailsAssignments DesignCardDetails[] @relation("DesignAssignments") // <-- Added inverse relation for Design
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
-// Base card fields as Prisma mixin
-model SalesCard {
-  id               String    @id @default(cuid())
-  customerId       String
-  projectNumber    String    @unique
-  title           String
-  description     String
-  createdAt       DateTime  @default(now())
-  lastModified    DateTime  @updatedAt
-  dueDate         DateTime?
-  lastInteraction DateTime
-  stage           String    // SalesStage type
-  estimateValue   Float
-  appointmentDate DateTime?
-  proposalSentDate DateTime?
-  
-  // Automation status
-  emailLogged         Boolean   @default(false)
-  alertsSent         Boolean   @default(false)
-  documentsGenerated Boolean   @default(false)
-  
-  // Relations
-  customer        Customer   @relation(fields: [customerId], references: [id])
-  documents       Document[]
-  integrationCard IntegrationCard?
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
 }
 
-model IntegrationCard {
-  id               String    @id @default(cuid())
-  customerId       String
-  projectNumber    String    @unique
-  title           String
-  description     String
-  createdAt       DateTime  @default(now())
-  lastModified    DateTime  @updatedAt
-  dueDate         DateTime?
-  lastInteraction DateTime
-  stage           String    // IntegrationStage type
-  salesCardId     String    @unique
-  
-  // Equipment status
-  equipmentOrdered  Boolean   @default(false)
-  equipmentReceived Boolean   @default(false)
-  installedDate    DateTime?
-  installationDate DateTime?
-  
-  // Automation status
-  emailLogged         Boolean   @default(false)
-  alertsSent         Boolean   @default(false)
-  documentsGenerated Boolean   @default(false)
-  
-  // Relations
-  customer        Customer   @relation(fields: [customerId], references: [id])
-  salesCard       SalesCard  @relation(fields: [salesCardId], references: [id])
-  documents       Document[]
+
+// ==================================
+// Core Business Models
+// ==================================
+
+model Customer {
+  id          String     @id @default(cuid())
+  name        String
+  status      String? // e.g., Active, Prospect, Inactive
+  grading     String? // e.g., A, B, C
+  notes       String?    @db.Text
+
+  locations   Location[]
+  contacts    Contact[]
+  projects    Project[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
 }
 
-model ServiceCard {
-  id               String    @id @default(cuid())
-  customerId       String
-  projectNumber    String    @unique
-  title           String
-  description     String
-  createdAt       DateTime  @default(now())
-  lastModified    DateTime  @updatedAt
-  dueDate         DateTime?
-  lastInteraction DateTime
-  stage           String    // ServiceStage type
-  serviceType     String    // 'maintenance' | 'repair' | 'upgrade'
-  rmaNumber       String?
-  partsRequired   String[]
-  
-  // Automation status
-  emailLogged         Boolean   @default(false)
-  alertsSent         Boolean   @default(false)
-  documentsGenerated Boolean   @default(false)
-  
-  // Relations
-  customer        Customer   @relation(fields: [customerId], references: [id])
-  documents       Document[]
+model Location {
+  id            String  @id @default(cuid())
+  customerId    String
+  addressLine1  String?
+  addressLine2  String?
+  city          String?
+  state         String?
+  zipCode       String?
+  country       String?
+  designation   String? // e.g., HQ, Branch, Site
+  notes         String? @db.Text
+
+  customer    Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  projects    Project[] // A location can have multiple projects
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
 }
 
-model RentalCard {
-  id               String    @id @default(cuid())
-  customerId       String
-  projectNumber    String    @unique
-  title           String
-  description     String
-  createdAt       DateTime  @default(now())
-  lastModified    DateTime  @updatedAt
-  dueDate         DateTime?
-  lastInteraction DateTime
-  stage           String    // RentalStage type
-  eventDate       DateTime?
-  equipmentList   String[]
-  quoteValue      Float
-  
-  // Automation status
-  emailLogged         Boolean   @default(false)
-  alertsSent         Boolean   @default(false)
-  documentsGenerated Boolean   @default(false)
-  
+model Contact {
+  id           String    @id @default(cuid())
+  customerId   String?   // Can belong to a customer OR be project-specific
+  firstName    String?
+  lastName     String?
+  email        String?   // Consider uniqueness constraint carefully
+  phone        String?
+  jobTitle     String?
+  role         String?   // e.g., Decision Maker, Technical Contact
+  notes        String?   @db.Text
+
+  customer     Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  projects     Project[] // Involved in potentially multiple projects
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // @@unique(fields: [email]) // Uncomment if email must be globally unique and not nullable
+  // @@unique(fields: [email], name: "unique_email_optional") // Use if email is unique but nullable
+  @@index([customerId])
+  @@index([email]) // Index email for faster lookups
+}
+
+model Project {
+  id           String         @id @default(cuid())
+  customerId   String
+  locationId   String?        // Specific site for the project
+  name         String         // Project name, e.g., "Conference Room Upgrade Q3"
+  description  String?        @db.Text
+  projectStatus String?        // e.g., Planning, Active, Completed, On Hold, Cancelled
+  startDate    DateTime?
+  endDate      DateTime?
+  notes        String?        @db.Text
+
+  customer     Customer       @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  location     Location?      @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  contacts     Contact[]      // Contacts associated with this project
+  pipelineCards PipelineCard[] // All pipeline cards belonging to this project
+  documents    Document[]     // All documents belonging to this project
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([locationId])
+}
+
+
+// ==================================
+// Pipeline & Document Models
+// ==================================
+
+model PipelineCard {
+  id            String          @id @default(cuid())
+  projectId     String
+  type          PipelineType    // SALES, DESIGN, INTEGRATION etc.
+  stage         PipelineStage   // Current stage within the pipeline type
+  status        PipelineStatus  // OPEN, ON_HOLD, WAITING_DESIGN, CLOSED
+  title         String
+  assignedUserId String?        // User primarily responsible for this card currently
+  notes         String?         @db.Text // General notes for this card
+
+  // Linking mechanism
+  originating_card_id String?       // ID of the card that spawned this one
+  originatingCard     PipelineCard? @relation("CardLinks", fields: [originating_card_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  spawnedCards        PipelineCard[] @relation("CardLinks") // Cards that were spawned by this one
+
   // Relations
-  customer        Customer   @relation(fields: [customerId], references: [id])
-  documents       Document[]
+  project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignedUser    User?           @relation("AssignedCards", fields: [assignedUserId], references: [id], onDelete: SetNull)
+
+  // Links to specific detail tables (optional, only one should exist per card)
+  salesDetails    SalesCardDetails?
+  designDetails   DesignCardDetails?
+  integrationDetails IntegrationCardDetails?
+  // serviceDetails ServiceCardDetails? // Future
+  // repairDetails RepairCardDetails? // Future
+  // rentalDetails RentalCardDetails? // Future
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([assignedUserId])
+  @@index([type])
+  @@index([stage])
+  @@index([status])
+  @@index([originating_card_id])
+}
+
+// Detail table for Sales specific fields
+model SalesCardDetails {
+  id                 String        @id @default(cuid())
+  cardId             String        @unique // 1:1 link to PipelineCard
+  estimatedValue     Float?
+  estimatedCloseDate DateTime?
+  source             String?       // e.g., Website, Referral, Service Handoff
+  nextStepSummary    String?       @db.Text
+  lastActivityDate   DateTime?     // Consider updating this via triggers or application logic
+
+  card PipelineCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+}
+
+// Detail table for Design specific fields
+model DesignCardDetails {
+  id                  String        @id @default(cuid())
+  cardId              String        @unique // 1:1 link to PipelineCard
+  designRequirements  String?       @db.Text
+  dueDate             DateTime?
+  estimatedHours      Float?
+  actualHours         Float?
+
+  card PipelineCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  // *** CORRECTED RELATION BELOW ***
+  assignedDesigner    User?         @relation("DesignAssignments", fields: [assignedDesignerId], references: [id], onDelete: SetNull) // Named relation
+  assignedDesignerId  String?
+
+  @@index([assignedDesignerId])
+}
+
+// Detail table for Integration specific fields
+model IntegrationCardDetails {
+  id                               String        @id @default(cuid())
+  cardId                           String        @unique // 1:1 link to PipelineCard
+  approvedProposalValue            Float?
+  depositAmount                    Float?
+  installationStartDate            DateTime?
+  installationEndDate              DateTime?
+  siteReadinessChecklistComplete Boolean       @default(false)
+
+  card PipelineCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  // Named relations to User
+  projectManager                   User?         @relation("ProjectManagerAssignments", fields: [projectManagerId], references: [id], onDelete: SetNull)
+  projectManagerId                 String?
+  leadTechnician                   User?         @relation("LeadTechnicianAssignments", fields: [leadTechnicianId], references: [id], onDelete: SetNull)
+  leadTechnicianId                 String?
+
+  @@index([projectManagerId])
+  @@index([leadTechnicianId])
+}
+
+
+model Document {
+  id              String   @id @default(cuid())
+  projectId       String
+  fileName        String
+  filePath        String   // Path on local storage (Phase 1) or potentially SharePoint identifier later
+  mimeType        String   // e.g., application/pdf, image/jpeg
+  size            Int      // Size in bytes
+  uploadTimestamp DateTime @default(now())
+  description     String?  @db.Text
+  uploaderId      String?  // User who uploaded the document
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploader User?  @relation("UploadedDocuments", fields: [uploaderId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([uploaderId])
 }
