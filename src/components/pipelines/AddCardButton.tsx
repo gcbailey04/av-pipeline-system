@@ -1,4 +1,4 @@
-// src/components/pipeline/AddCardButton.tsx
+// src/components/pipelines/AddCardButton.tsx
 
 import React, { useState } from 'react';
 import { Button } from '../ui/button';

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs'
-import { PipelineBoard } from '../../components/pipeline/PipelineBoard'
+import { PipelineBoard } from '../../components/pipelines/PipelineBoard'
 import { useToast } from '../../components/ui/use-toast'
 import type { 
   Pipeline, 

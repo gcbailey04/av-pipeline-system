@@ -1,4 +1,4 @@
-// src/components/pipeline/CardAddDialog.tsx
+// src/components/pipelines/CardAddDialog.tsx
 
 import React, { useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
