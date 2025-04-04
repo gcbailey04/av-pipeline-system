@@ -4,6 +4,8 @@ import type { Card as CardType } from '../../types/pipeline'
 import { Badge } from '../ui/badge'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../ui/card'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
+import { PipelineActionButtons } from './PipelineActionButtons'
+import { PipelineType, PipelineStage, PipelineStatus } from '@prisma/client'
 
 interface PipelineCardProps<T extends CardType> {
   card: T
@@ -46,6 +48,64 @@ const formatDate = (date: Date | string | null | undefined) => {
   }
 }
 
+// Helper function to map string-based type/stage to enum-based PipelineType/PipelineStage
+// This is only needed during the transition from the old model to the new model
+const mapCardTypeToEnum = (type: string): PipelineType => {
+  switch(type) {
+    case 'sales': return PipelineType.SALES;
+    case 'integration': return PipelineType.INTEGRATION;
+    case 'service': return PipelineType.SERVICE;
+    case 'rental': return PipelineType.RENTAL;
+    default: return PipelineType.SALES;
+  }
+}
+
+const mapCardStageToEnum = (type: string, stage: string): PipelineStage => {
+  if (type === 'sales') {
+    switch(stage) {
+      case 'New Lead': return PipelineStage.NEW_LEAD;
+      case 'Qualified': return PipelineStage.QUALIFIED;
+      case 'Appointment Scheduled': return PipelineStage.APPOINTMENT_SCHEDULED;
+      case 'Appointment Complete': return PipelineStage.APPOINTMENT_COMPLETE;
+      case 'Design': return PipelineStage.DESIGN_STARTED;
+      case 'Proposal': return PipelineStage.PROPOSAL;
+      case 'Proposal Sent': return PipelineStage.PROPOSAL_SENT;
+      case 'Revisions': return PipelineStage.REVISIONS;
+      case 'Won': return PipelineStage.WON;
+      case 'Closed Lost': return PipelineStage.LOST;
+      default: return PipelineStage.NEW_LEAD;
+    }
+  } else if (type === 'integration') {
+    switch(stage) {
+      case 'Approved': return PipelineStage.APPROVED;
+      case 'Invoice Sent': return PipelineStage.DEPOSIT_INVOICE_SENT;
+      case 'Paid': return PipelineStage.DEPOSIT_INVOICE_PAID;
+      case 'Equipment Ordered': return PipelineStage.EQUIPMENT_ORDERED;
+      case 'Equipment Received': return PipelineStage.EQUIPMENT_RECEIVED;
+      case 'Scheduled': return PipelineStage.SCHEDULED;
+      case 'Installation': return PipelineStage.INSTALLATION;
+      case 'Commission': return PipelineStage.COMMISSIONING;
+      case 'Ready To Invoice': return PipelineStage.INVOICE;
+      case 'Invoiced': return PipelineStage.INTEGRATION_COMPLETE;
+      default: return PipelineStage.APPROVED;
+    }
+  }
+  
+  // Default to a basic stage
+  return PipelineStage.NEW_LEAD;
+}
+
+// Helper to determine the status enum
+const determineCardStatus = (card: CardType): PipelineStatus => {
+  if ('automationStatus' in card && card.automationStatus) {
+    // This is a temporary mapping - adjust based on your actual data structure
+    if (card.type === 'sales' && card.stage === 'Design') {
+      return PipelineStatus.WAITING_DESIGN;
+    }
+  }
+  return PipelineStatus.OPEN;
+}
+
 export const PipelineCard = <T extends CardType>({
   card,
   onDragStart,
@@ -58,6 +118,11 @@ export const PipelineCard = <T extends CardType>({
     e.stopPropagation() // Prevent card click event
     onEdit?.(card)
   }
+
+  // Map string-based types to enum-based types for the action buttons
+  const cardTypeEnum = mapCardTypeToEnum(card.type);
+  const cardStageEnum = mapCardStageToEnum(card.type, card.stage as string);
+  const cardStatusEnum = determineCardStatus(card);
 
   return (
     <Card 
@@ -126,6 +191,18 @@ export const PipelineCard = <T extends CardType>({
             </Badge>
           )}
         </div>
+        
+        {/* Add the action buttons */}
+        <PipelineActionButtons
+          cardId={card.id}
+          cardType={cardTypeEnum}
+          cardStage={cardStageEnum}
+          cardStatus={cardStatusEnum}
+          onActionComplete={() => {
+            // This callback is optional - you can use it to refresh data if needed
+            // For now, we'll rely on the revalidatePath in the server actions
+          }}
+        />
       </CardContent>
 
       <CardFooter className="pt-2">

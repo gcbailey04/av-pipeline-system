@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react'
 import type { Card as CardType, Pipeline, PipelineType } from '../../types/pipeline'
 import { PipelineColumn } from './PipelineColumn'

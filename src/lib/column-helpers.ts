@@ -47,6 +47,7 @@ export function getPipelineStages(pipelineType: string): { id: string, title: st
         { id: 'new-lead', title: 'New Lead' },
         { id: 'qualified', title: 'Qualified' },
         { id: 'appointment-scheduled', title: 'Appointment Scheduled' },
+        { id: 'appointment-complete', title: 'Appointment Complete' }, // Added this stage
         { id: 'design', title: 'Design' },
         { id: 'proposal-sent', title: 'Proposal Sent' },
         { id: 'revisions', title: 'Revisions' },
