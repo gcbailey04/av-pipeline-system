@@ -9,13 +9,13 @@ import {
   completeDesign, 
   createIntegration 
 } from "@/lib/actions/pipeline";
+import { PipelineType, PipelineStage, PipelineStatus } from "@prisma/client";
 
-// Updated interface to include cardStatus
 interface PipelineActionButtonsProps {
   cardId: string;
-  cardType: string; // 'sales', 'design', etc.
-  cardStage: string; // 'New Lead', 'Appointment Complete', etc.
-  cardStatus: string; // Added this property
+  cardType: PipelineType;
+  cardStage: PipelineStage;
+  cardStatus: PipelineStatus;
   onActionComplete?: () => void;
 }
 
@@ -23,7 +23,7 @@ export function PipelineActionButtons({
   cardId,
   cardType,
   cardStage,
-  cardStatus, // Add it to destructuring as well
+  cardStatus,
   onActionComplete
 }: PipelineActionButtonsProps) {
   const [isPending, setIsPending] = useState(false);
@@ -31,7 +31,7 @@ export function PipelineActionButtons({
 
   // Request Design action (from Sales "Appointment Complete")
   const handleRequestDesign = async () => {
-    if (cardType !== 'sales' || cardStage !== 'Appointment Complete') {
+    if (cardType !== PipelineType.SALES || cardStage !== PipelineStage.APPOINTMENT_COMPLETE) {
       return;
     }
 
@@ -66,7 +66,7 @@ export function PipelineActionButtons({
 
   // Complete Design action (from Design "Design Verification")
   const handleCompleteDesign = async () => {
-    if (cardType !== 'design' || cardStage !== 'Design Verification') {
+    if (cardType !== PipelineType.DESIGN || cardStage !== PipelineStage.DESIGN_VERIFICATION) {
       return;
     }
 
@@ -101,7 +101,7 @@ export function PipelineActionButtons({
 
   // Create Integration action (from Sales "Won")
   const handleCreateIntegration = async () => {
-    if (cardType !== 'sales' || cardStage !== 'Won') {
+    if (cardType !== PipelineType.SALES || cardStage !== PipelineStage.WON) {
       return;
     }
 
@@ -137,8 +137,8 @@ export function PipelineActionButtons({
   // Conditionally render appropriate action buttons based on card state
   const renderActionButtons = () => {
     // For Sales cards
-    if (cardType === 'sales') {
-      if (cardStage === 'Appointment Complete') {
+    if (cardType === PipelineType.SALES) {
+      if (cardStage === PipelineStage.APPOINTMENT_COMPLETE) {
         return (
           <Button 
             variant="outline" 
@@ -152,7 +152,7 @@ export function PipelineActionButtons({
         );
       }
       
-      if (cardStage === 'Won') {
+      if (cardStage === PipelineStage.WON) {
         return (
           <Button 
             variant="outline" 
@@ -167,7 +167,7 @@ export function PipelineActionButtons({
       }
       
       // Show status indicator for cards in design phase
-      if (cardStatus === 'Waiting Design') {
+      if (cardStatus === PipelineStatus.WAITING_DESIGN) {
         return (
           <div className="text-xs font-semibold text-orange-600 mt-2">
             Waiting for Design...
@@ -177,8 +177,8 @@ export function PipelineActionButtons({
     }
     
     // For Design cards
-    if (cardType === 'design') {
-      if (cardStage === 'Design Verification') {
+    if (cardType === PipelineType.DESIGN) {
+      if (cardStage === PipelineStage.DESIGN_VERIFICATION) {
         return (
           <Button 
             variant="outline" 

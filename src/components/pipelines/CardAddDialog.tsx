@@ -35,6 +35,7 @@ import {
   Document
 } from '../../types/pipeline';
 import { getPipelineStages, getDefaultStage } from '../../lib/column-helpers';
+import { PipelineType, PipelineStage } from '@prisma/client';
 
 interface CardAddDialogProps {
   pipelineType: PipelineType;

@@ -1,58 +1,82 @@
+// src/components/pipelines/PipelineCard.tsx
 import React from 'react'
 import { Clock, AlertCircle, Paperclip, RotateCw, Edit2 } from 'lucide-react'
-import type { Card as CardType } from '../../types/pipeline'
-import { Badge } from '../ui/badge'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../ui/card'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
-import { PipelineActionButtons } from './PipelineActionButtons'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { PipelineActionButtons } from '@/components/pipelines/PipelineActionButtons'
 import { PipelineType, PipelineStage, PipelineStatus } from '@prisma/client'
 
-interface PipelineCardProps<T extends CardType> {
-  card: T
-  onDragStart?: (e: React.DragEvent, card: T) => void
-  onClick?: (card: T) => void
-  onEdit?: (card: T) => void
+// This is a temporary interface for the transition period
+// Eventually we should use the actual Prisma types
+interface CardType {
+  id: string;
+  type: string;
+  stage: string;
+  title: string;
+  projectNumber?: string;
+  description?: string;
+  dueDate?: Date | string | null;
+  lastModified?: Date | string;
+  lastInteraction?: Date | string;
+  documents?: any[];
+  automationStatus?: {
+    emailLogged?: boolean;
+    alertsSent?: boolean;
+    documentsGenerated?: boolean;
+  };
+  // Legacy type-specific properties
+  estimateValue?: number;
+  serviceType?: string;
+  eventDate?: Date | string;
+}
+
+interface PipelineCardProps {
+  card: CardType;
+  onDragStart?: (e: React.DragEvent, card: CardType) => void;
+  onClick?: (card: CardType) => void;
+  onEdit?: (card: CardType) => void;
 }
 
 const getStatusColor = (lastInteraction: Date | string | null | undefined): string => {
-  if (!lastInteraction) return 'bg-gray-500' // Default color if no date
+  if (!lastInteraction) return 'bg-gray-500'; // Default color if no date
   
   // Convert to Date object if it's a string
   const interactionDate = typeof lastInteraction === 'string' 
     ? new Date(lastInteraction) 
     : lastInteraction instanceof Date 
       ? lastInteraction 
-      : null
+      : null;
   
   if (!interactionDate || isNaN(interactionDate.getTime())) {
-    return 'bg-gray-500' // Invalid date
+    return 'bg-gray-500'; // Invalid date
   }
   
-  const daysSinceInteraction = Math.floor((Date.now() - interactionDate.getTime()) / (1000 * 60 * 60 * 24))
-  if (daysSinceInteraction >= 3) return 'bg-red-500'
-  if (daysSinceInteraction >= 2) return 'bg-yellow-500'
-  return 'bg-green-500'
+  const daysSinceInteraction = Math.floor((Date.now() - interactionDate.getTime()) / (1000 * 60 * 60 * 24));
+  if (daysSinceInteraction >= 3) return 'bg-red-500';
+  if (daysSinceInteraction >= 2) return 'bg-yellow-500';
+  return 'bg-green-500';
 }
 
 const formatDate = (date: Date | string | null | undefined) => {
-  if (!date) return 'N/A'
+  if (!date) return 'N/A';
   
   try {
     return new Date(date).toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric'
-    })
+    });
   } catch (error) {
-    console.error('Invalid date format:', date, error)
-    return 'Invalid date'
+    console.error('Invalid date format:', date, error);
+    return 'Invalid date';
   }
 }
 
-// Helper function to map string-based type/stage to enum-based PipelineType/PipelineStage
-// This is only needed during the transition from the old model to the new model
+// Helper function to map string-based type to enum-based PipelineType
 const mapCardTypeToEnum = (type: string): PipelineType => {
-  switch(type) {
+  switch(type.toLowerCase()) {
     case 'sales': return PipelineType.SALES;
+    case 'design': return PipelineType.DESIGN;
     case 'integration': return PipelineType.INTEGRATION;
     case 'service': return PipelineType.SERVICE;
     case 'rental': return PipelineType.RENTAL;
@@ -60,70 +84,96 @@ const mapCardTypeToEnum = (type: string): PipelineType => {
   }
 }
 
+// Helper function to map string-based stage to enum-based PipelineStage
 const mapCardStageToEnum = (type: string, stage: string): PipelineStage => {
-  if (type === 'sales') {
-    switch(stage) {
-      case 'New Lead': return PipelineStage.NEW_LEAD;
-      case 'Qualified': return PipelineStage.QUALIFIED;
-      case 'Appointment Scheduled': return PipelineStage.APPOINTMENT_SCHEDULED;
-      case 'Appointment Complete': return PipelineStage.APPOINTMENT_COMPLETE;
-      case 'Design': return PipelineStage.DESIGN_STARTED;
-      case 'Proposal': return PipelineStage.PROPOSAL;
-      case 'Proposal Sent': return PipelineStage.PROPOSAL_SENT;
-      case 'Revisions': return PipelineStage.REVISIONS;
-      case 'Won': return PipelineStage.WON;
-      case 'Closed Lost': return PipelineStage.LOST;
-      default: return PipelineStage.NEW_LEAD;
-    }
-  } else if (type === 'integration') {
-    switch(stage) {
-      case 'Approved': return PipelineStage.APPROVED;
-      case 'Invoice Sent': return PipelineStage.DEPOSIT_INVOICE_SENT;
-      case 'Paid': return PipelineStage.DEPOSIT_INVOICE_PAID;
-      case 'Equipment Ordered': return PipelineStage.EQUIPMENT_ORDERED;
-      case 'Equipment Received': return PipelineStage.EQUIPMENT_RECEIVED;
-      case 'Scheduled': return PipelineStage.SCHEDULED;
-      case 'Installation': return PipelineStage.INSTALLATION;
-      case 'Commission': return PipelineStage.COMMISSIONING;
-      case 'Ready To Invoice': return PipelineStage.INVOICE;
-      case 'Invoiced': return PipelineStage.INTEGRATION_COMPLETE;
-      default: return PipelineStage.APPROVED;
-    }
+  const lowerType = type.toLowerCase();
+  const lowerStage = stage.toLowerCase();
+  
+  if (lowerType === 'sales') {
+    if (lowerStage.includes('new lead')) return PipelineStage.NEW_LEAD;
+    if (lowerStage.includes('qualified')) return PipelineStage.QUALIFIED;
+    if (lowerStage.includes('appointment scheduled')) return PipelineStage.APPOINTMENT_SCHEDULED;
+    if (lowerStage.includes('appointment complete')) return PipelineStage.APPOINTMENT_COMPLETE;
+    if (lowerStage.includes('design')) return PipelineStage.DESIGN_STARTED;
+    if (lowerStage.includes('proposal') && !lowerStage.includes('sent')) return PipelineStage.PROPOSAL;
+    if (lowerStage.includes('proposal sent')) return PipelineStage.PROPOSAL_SENT;
+    if (lowerStage.includes('revisions') && !lowerStage.includes('sent')) return PipelineStage.REVISIONS;
+    if (lowerStage.includes('won')) return PipelineStage.WON;
+    if (lowerStage.includes('lost')) return PipelineStage.LOST;
+  } 
+  else if (lowerType === 'design') {
+    if (lowerStage.includes('new design')) return PipelineStage.NEW_DESIGN;
+    if (lowerStage.includes('design started')) return PipelineStage.DESIGN_STARTED;
+    if (lowerStage.includes('verification')) return PipelineStage.DESIGN_VERIFICATION;
+    if (lowerStage.includes('complete')) return PipelineStage.DESIGN_COMPLETE;
+  }
+  else if (lowerType === 'integration') {
+    if (lowerStage.includes('approved')) return PipelineStage.APPROVED;
+    if (lowerStage.includes('invoice sent')) return PipelineStage.DEPOSIT_INVOICE_SENT;
+    if (lowerStage.includes('paid')) return PipelineStage.DEPOSIT_INVOICE_PAID;
+    if (lowerStage.includes('equipment ordered')) return PipelineStage.EQUIPMENT_ORDERED;
+    if (lowerStage.includes('equipment received')) return PipelineStage.EQUIPMENT_RECEIVED;
+    if (lowerStage.includes('scheduled')) return PipelineStage.SCHEDULED;
+    if (lowerStage.includes('installation')) return PipelineStage.INSTALLATION;
+    if (lowerStage.includes('commission')) return PipelineStage.COMMISSIONING;
+    if (lowerStage.includes('ready to invoice')) return PipelineStage.INVOICE;
+    if (lowerStage.includes('invoiced')) return PipelineStage.INTEGRATION_COMPLETE;
   }
   
-  // Default to a basic stage
+  // Fallback to a suitable default based on type
+  if (lowerType === 'sales') return PipelineStage.NEW_LEAD;
+  if (lowerType === 'design') return PipelineStage.NEW_DESIGN;
+  if (lowerType === 'integration') return PipelineStage.APPROVED;
+  if (lowerType === 'service') return PipelineStage.SERVICE_REQUEST;
+  if (lowerType === 'rental') return PipelineStage.RENTAL_REQUEST;
+  
   return PipelineStage.NEW_LEAD;
 }
 
 // Helper to determine the status enum
 const determineCardStatus = (card: CardType): PipelineStatus => {
-  if ('automationStatus' in card && card.automationStatus) {
-    // This is a temporary mapping - adjust based on your actual data structure
-    if (card.type === 'sales' && card.stage === 'Design') {
-      return PipelineStatus.WAITING_DESIGN;
+  // If this is already using the new model with proper status field
+  if ('status' in card && typeof card.status === 'string') {
+    try {
+      return card.status as PipelineStatus;
+    } catch (e) {
+      // Fall through to inferring logic
     }
   }
+  
+  // Legacy logic to infer status
+  if (card.type.toLowerCase() === 'sales' && 
+      card.stage.toLowerCase().includes('design')) {
+    return PipelineStatus.WAITING_DESIGN;
+  }
+  
+  if (card.stage.toLowerCase().includes('lost') || 
+      card.stage.toLowerCase().includes('complete') || 
+      card.stage.toLowerCase().includes('invoiced')) {
+    return PipelineStatus.CLOSED;
+  }
+  
   return PipelineStatus.OPEN;
 }
 
-export const PipelineCard = <T extends CardType>({
+export const PipelineCard: React.FC<PipelineCardProps> = ({
   card,
   onDragStart,
   onClick,
   onEdit
-}: PipelineCardProps<T>) => {
-  const statusColor = getStatusColor(card.lastInteraction)
+}) => {
+  const statusColor = getStatusColor(card.lastInteraction);
   
   const handleEdit = (e: React.MouseEvent) => {
-    e.stopPropagation() // Prevent card click event
-    onEdit?.(card)
+    e.stopPropagation(); // Prevent card click event
+    onEdit?.(card);
   }
 
   // Map string-based types to enum-based types for the action buttons
   const cardTypeEnum = mapCardTypeToEnum(card.type);
   const cardStageEnum = mapCardStageToEnum(card.type, card.stage as string);
   const cardStatusEnum = determineCardStatus(card);
-
+  
   return (
     <Card 
       draggable
@@ -134,7 +184,7 @@ export const PipelineCard = <T extends CardType>({
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg font-medium">
-            {card.projectNumber}
+            {card.projectNumber || card.title}
           </CardTitle>
           <div className="flex gap-2 items-center">
             <button
@@ -163,7 +213,7 @@ export const PipelineCard = <T extends CardType>({
           </div>
         </div>
         <CardDescription className="line-clamp-2">
-          {card.title}
+          {card.description || card.title}
         </CardDescription>
       </CardHeader>
 
@@ -239,5 +289,5 @@ export const PipelineCard = <T extends CardType>({
         </div>
       </CardFooter>
     </Card>
-  )
+  );
 }

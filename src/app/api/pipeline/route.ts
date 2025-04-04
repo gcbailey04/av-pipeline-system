@@ -1,109 +1,70 @@
-// app/api/pipeline/route.ts
+// src/app/api/pipeline/route.ts
 
 import { NextResponse } from 'next/server';
-import { prisma } from '../../../lib';
-import { PipelineType } from '../../../types/pipeline';
-import { getPipelineStages } from '../../../lib/column-helpers';
-import { prismaToCard, cardToPrismaInput } from '../../../lib/card-helpers';
-
-// Create mock data for fallback
-const createMockData = (): Record<PipelineType, Array<{id: string; title: string; cards: any[]}>> => {
-  return {
-    sales: getPipelineStages('sales').map(stage => ({ ...stage, cards: [] })),
-    integration: getPipelineStages('integration').map(stage => ({ ...stage, cards: [] })),
-    service: getPipelineStages('service').map(stage => ({ ...stage, cards: [] })),
-    rental: getPipelineStages('rental').map(stage => ({ ...stage, cards: [] }))
-  };
-};
-
-// Add sample card
-const mockData = createMockData();
-mockData.sales[0].cards.push({
-  id: '1',
-  type: 'sales',
-  customerId: 'cust1',
-  projectNumber: 'S2502-001',
-  title: 'Office Building AV System',
-  description: 'Complete AV system for new office building',
-  createdAt: new Date('2025-02-20'),
-  lastModified: new Date('2025-02-20'),
-  dueDate: new Date('2025-03-20'),
-  lastInteraction: new Date('2025-02-20'),
-  automationStatus: {
-    emailLogged: true,
-    alertsSent: false,
-    documentsGenerated: false
-  },
-  documents: [],
-  stage: 'New Lead',
-  estimateValue: 75000,
-});
+import prisma from '@/lib/prisma';
+import { PipelineType, PipelineStage, PipelineStatus } from '@prisma/client';
+import { revalidatePath } from 'next/cache';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const type = searchParams.get('type') as PipelineType;
+  const typeParam = searchParams.get('type')?.toUpperCase();
 
-  if (!type || !(['sales', 'integration', 'service', 'rental'] as PipelineType[]).includes(type)) {
-    return NextResponse.json({ error: 'Valid pipeline type is required (sales, integration, service, or rental)' }, { status: 400 });
+  if (!typeParam || !Object.values(PipelineType).includes(typeParam as PipelineType)) {
+    return NextResponse.json({ 
+      error: 'Valid pipeline type is required (SALES, DESIGN, INTEGRATION, SERVICE, or RENTAL)' 
+    }, { status: 400 });
   }
 
+  // Convert string type to enum
+  const pipelineType = typeParam as PipelineType;
+
   try {
-    console.log('Fetching pipeline for type:', type);
+    console.log('Fetching pipeline for type:', pipelineType);
     
-    let cards;
-    
-    // Fetch cards based on pipeline type
-    switch (type) {
-      case 'sales':
-        cards = await prisma.salesCard.findMany({
+    // Fetch pipeline cards with the appropriate relations
+    const cards = await prisma.pipelineCard.findMany({
+      where: { 
+        type: pipelineType
+      },
+      include: {
+        project: {
           include: {
             customer: true,
-            documents: true
           }
-        });
-        break;
-      case 'integration':
-        cards = await prisma.integrationCard.findMany({
-          include: {
-            customer: true,
-            documents: true,
-            salesCard: true
-          }
-        });
-        break;
-      case 'service':
-        cards = await prisma.serviceCard.findMany({
-          include: {
-            customer: true,
-            documents: true
-          }
-        });
-        break;
-      case 'rental':
-        cards = await prisma.rentalCard.findMany({
-          include: {
-            customer: true,
-            documents: true
-          }
-        });
-        break;
-      default:
-        throw new Error(`Invalid pipeline type: ${type}`);
-    }
-    
-    // Map database cards to application cards using helper function
-    const mappedCards = cards.map(dbCard => prismaToCard(dbCard, type));
+        },
+        salesDetails: pipelineType === PipelineType.SALES,
+        designDetails: pipelineType === PipelineType.DESIGN,
+        integrationDetails: pipelineType === PipelineType.INTEGRATION,
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
     
     // Group cards by stage
-    const stages = getPipelineStages(type);
-    const columns = stages.map(stage => {
-      const stageCards = mappedCards.filter(card => card.stage === stage.title);
-      return {
-        id: stage.id,
-        title: stage.title,
-        cards: stageCards
-      };
+    const cardsByStage: Record<string, any[]> = {};
+    
+    // Initialize all stages to ensure we have columns even for empty stages
+    const relevantStages = getPipelineStages(pipelineType);
+    
+    relevantStages.forEach(stage => {
+      cardsByStage[stage] = [];
     });
+    
+    // Add cards to their respective stages
+    cards.forEach(card => {
+      if (!cardsByStage[card.stage]) {
+        cardsByStage[card.stage] = [];
+      }
+      cardsByStage[card.stage].push(card);
+    });
+    
+    // Convert to array format for the frontend
+    const columns = Object.entries(cardsByStage).map(([stage, cards]) => ({
+      id: stage,
+      title: formatStageTitle(stage),
+      cards
+    }));
     
     return NextResponse.json(columns);
   } catch (error) {
@@ -112,287 +73,332 @@ export async function GET(request: Request) {
     // Proper error handling with type safety
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
     
-    // Fallback to mock data on error
-    console.log('Falling back to mock data:', errorMessage);
-    return NextResponse.json(mockData[type]);
+    return NextResponse.json({ 
+      error: 'Failed to fetch pipeline data', 
+      details: errorMessage 
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { type, ...data } = body;
-    console.log('POST request received:', { type, data });
+    const { type, title, description, projectId } = body;
+    
+    console.log('Creating new card with data:', body);
+    
+    if (!type || !title) {
+      return NextResponse.json({ 
+        error: 'Missing required fields: type, title' 
+      }, { status: 400 });
+    }
 
-    // Type guard to ensure type is a valid PipelineType
-    if (!type || !(['sales', 'integration', 'service', 'rental'] as PipelineType[]).includes(type as PipelineType)) {
-      return NextResponse.json({ error: 'Valid pipeline type is required' }, { status: 400 });
+    // Validate pipeline type
+    if (!Object.values(PipelineType).includes(type)) {
+      return NextResponse.json({ 
+        error: 'Invalid pipeline type' 
+      }, { status: 400 });
     }
     
-    const validType = type as PipelineType;
+    // Verify project exists or create a default one
+    let actualProjectId = projectId;
     
-    // Check for existing customer, or create a new one if needed
-    let customer = null;
-    if (data.customerId) {
-      customer = await prisma.customer.findUnique({
-        where: { id: data.customerId }
+    if (!actualProjectId) {
+      // Create a default project if none exists
+      console.log('No project ID provided, creating a default project');
+      const defaultProject = await createDefaultProject();
+      actualProjectId = defaultProject.id;
+    } else {
+      // Verify the project exists
+      const project = await prisma.project.findUnique({
+        where: { id: actualProjectId }
       });
       
-      if (!customer) {
-        // Create a default customer if the ID doesn't exist
-        customer = await prisma.customer.create({
-          data: {
-            id: data.customerId,
-            name: 'New Customer',
-            email: 'customer@example.com',
-            phone: '555-555-5555',
-            address: 'No address provided',
-            lastInteraction: new Date(),
-          }
-        });
+      if (!project) {
+        console.log('Project ID not found, creating a default project');
+        const defaultProject = await createDefaultProject();
+        actualProjectId = defaultProject.id;
       }
     }
-
-    // Convert card to Prisma format
-    const fullCard = { ...data, type: validType };
-    const prismaData = cardToPrismaInput(fullCard);
-
-    // Create card based on type
-    let createdCard;
     
-    switch (validType) {
-      case 'sales':
-        createdCard = await prisma.salesCard.create({
-          data: prismaData,
+    // Get default stage for the pipeline type
+    const pipelineTypeEnum = type as PipelineType;
+    const defaultStage = getDefaultStage(pipelineTypeEnum);
+    
+    console.log('Creating card with project ID:', actualProjectId);
+    
+    // Create the pipeline card
+    const card = await prisma.pipelineCard.create({
+      data: {
+        projectId: actualProjectId,
+        type: pipelineTypeEnum,
+        stage: defaultStage,
+        status: PipelineStatus.OPEN,
+        title,
+        notes: description || '',
+      },
+      include: {
+        project: {
           include: {
-            documents: true,
-            customer: true
-          }
-        });
-        break;
-        
-      case 'integration':
-        createdCard = await prisma.integrationCard.create({
-          data: prismaData,
-          include: {
-            documents: true,
             customer: true,
-            salesCard: true
           }
-        });
-        break;
-        
-      case 'service':
-        createdCard = await prisma.serviceCard.create({
-          data: prismaData,
-          include: {
-            documents: true,
-            customer: true
-          }
-        });
-        break;
-        
-      case 'rental':
-        createdCard = await prisma.rentalCard.create({
-          data: prismaData,
-          include: {
-            documents: true,
-            customer: true
-          }
-        });
-        break;
-        
-      default:
-        throw new Error(`Invalid card type: ${validType}`);
-    }
+        }
+      }
+    });
     
-    // Convert database card back to application model
-    const responseCard = prismaToCard(createdCard, validType);
-
-    return NextResponse.json(responseCard);
+    // Create type-specific details record
+    await createCardDetails(card.id, pipelineTypeEnum);
+    
+    // Get the complete card with details
+    const completeCard = await prisma.pipelineCard.findUnique({
+      where: { id: card.id },
+      include: {
+        project: {
+          include: {
+            customer: true,
+          }
+        },
+        salesDetails: pipelineTypeEnum === PipelineType.SALES,
+        designDetails: pipelineTypeEnum === PipelineType.DESIGN,
+        integrationDetails: pipelineTypeEnum === PipelineType.INTEGRATION,
+      }
+    });
+    
+    revalidatePath(`/pipeline`);
+    return NextResponse.json(completeCard);
   } catch (error) {
     console.error('Failed to create card:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-    return NextResponse.json({ error: 'Failed to create card', details: errorMessage }, { status: 500 });
+    return NextResponse.json({ 
+      error: 'Failed to create card', 
+      details: errorMessage 
+    }, { status: 500 });
   }
 }
 
 export async function PATCH(request: Request) {
   try {
     const body = await request.json();
-    const { type, cardId, stage, cardData } = body;
-    console.log('PATCH request received:', { type, cardId, stage, cardData });
-
-    // Type guard to ensure type is a valid PipelineType
-    if (!type || !(['sales', 'integration', 'service', 'rental'] as PipelineType[]).includes(type as PipelineType)) {
-      return NextResponse.json({ error: 'Valid pipeline type is required' }, { status: 400 });
-    }
-    
-    const validType = type as PipelineType;
+    const { cardId, stage, status, ...updates } = body;
     
     if (!cardId) {
-      return NextResponse.json({ error: 'Card ID is required' }, { status: 400 });
+      return NextResponse.json({ 
+        error: 'Card ID is required' 
+      }, { status: 400 });
     }
-
-    // Handle stage update (card movement)
+    
+    // Find the existing card
+    const existingCard = await prisma.pipelineCard.findUnique({
+      where: { id: cardId }
+    });
+    
+    if (!existingCard) {
+      return NextResponse.json({ 
+        error: 'Card not found' 
+      }, { status: 404 });
+    }
+    
+    // Update data
+    const updateData: any = {
+      ...updates,
+      updatedAt: new Date(),
+    };
+    
     if (stage) {
-      let updatedCard;
-      
-      switch (validType) {
-        case 'sales':
-          updatedCard = await prisma.salesCard.update({
-            where: { id: cardId },
-            data: { 
-              stage,
-              lastModified: new Date(),
-              lastInteraction: new Date()
-            },
-            include: {
-              documents: true,
-              customer: true
-            }
-          });
-          break;
-          
-        case 'integration':
-          updatedCard = await prisma.integrationCard.update({
-            where: { id: cardId },
-            data: { 
-              stage,
-              lastModified: new Date(),
-              lastInteraction: new Date()
-            },
-            include: {
-              documents: true,
-              customer: true,
-              salesCard: true
-            }
-          });
-          break;
-          
-        case 'service':
-          updatedCard = await prisma.serviceCard.update({
-            where: { id: cardId },
-            data: { 
-              stage,
-              lastModified: new Date(),
-              lastInteraction: new Date()
-            },
-            include: {
-              documents: true,
-              customer: true
-            }
-          });
-          break;
-          
-        case 'rental':
-          updatedCard = await prisma.rentalCard.update({
-            where: { id: cardId },
-            data: { 
-              stage,
-              lastModified: new Date(),
-              lastInteraction: new Date()
-            },
-            include: {
-              documents: true,
-              customer: true
-            }
-          });
-          break;
-          
-        default:
-          throw new Error(`Invalid card type: ${validType}`);
-      }
-      
-      // Convert database card back to application model
-      const responseCard = prismaToCard(updatedCard, validType);
-      
-      return NextResponse.json(responseCard);
+      updateData.stage = stage;
     }
     
-    // Handle full card update
-    if (cardData) {
-      // Add type to cardData for conversion
-      const fullCard = { ...cardData, type: validType };
-      const prismaData = cardToPrismaInput(fullCard);
-      
-      // Remove fields that shouldn't be updated directly
-      const { id, customerId, projectNumber, createdAt, ...updateData } = prismaData;
-      
-      let updatedCard;
-      
-      switch (validType) {
-        case 'sales':
-          updatedCard = await prisma.salesCard.update({
-            where: { id: cardId },
-            data: {
-              ...updateData,
-              lastModified: new Date()
-            },
-            include: {
-              documents: true,
-              customer: true
-            }
-          });
-          break;
-          
-        case 'integration':
-          updatedCard = await prisma.integrationCard.update({
-            where: { id: cardId },
-            data: {
-              ...updateData,
-              lastModified: new Date()
-            },
-            include: {
-              documents: true,
-              customer: true,
-              salesCard: true
-            }
-          });
-          break;
-          
-        case 'service':
-          updatedCard = await prisma.serviceCard.update({
-            where: { id: cardId },
-            data: {
-              ...updateData,
-              lastModified: new Date()
-            },
-            include: {
-              documents: true,
-              customer: true
-            }
-          });
-          break;
-          
-        case 'rental':
-          updatedCard = await prisma.rentalCard.update({
-            where: { id: cardId },
-            data: {
-              ...updateData,
-              lastModified: new Date()
-            },
-            include: {
-              documents: true,
-              customer: true
-            }
-          });
-          break;
-          
-        default:
-          throw new Error(`Invalid card type: ${validType}`);
-      }
-      
-      // Convert database card back to application model
-      const responseCard = prismaToCard(updatedCard, validType);
-      
-      return NextResponse.json(responseCard);
+    if (status) {
+      updateData.status = status;
     }
     
-    return NextResponse.json({ error: 'No updates provided' }, { status: 400 });
+    // Update the card
+    const updatedCard = await prisma.pipelineCard.update({
+      where: { id: cardId },
+      data: updateData,
+      include: {
+        project: {
+          include: {
+            customer: true,
+          }
+        },
+        salesDetails: existingCard.type === PipelineType.SALES,
+        designDetails: existingCard.type === PipelineType.DESIGN,
+        integrationDetails: existingCard.type === PipelineType.INTEGRATION,
+      }
+    });
+    
+    revalidatePath(`/pipeline`);
+    return NextResponse.json(updatedCard);
   } catch (error) {
     console.error('Failed to update card:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-    return NextResponse.json({ error: 'Failed to update card', details: errorMessage }, { status: 500 });
+    return NextResponse.json({ 
+      error: 'Failed to update card', 
+      details: errorMessage 
+    }, { status: 500 });
+  }
+}
+
+// Helper to get relevant stages for a pipeline type
+function getPipelineStages(pipelineType: PipelineType): string[] {
+  // Sales pipeline stages
+  if (pipelineType === PipelineType.SALES) {
+    return [
+      PipelineStage.NEW_LEAD,
+      PipelineStage.QUALIFIED, 
+      PipelineStage.APPOINTMENT_SCHEDULED,
+      PipelineStage.APPOINTMENT_COMPLETE,
+      PipelineStage.PROPOSAL,
+      PipelineStage.PROPOSAL_SENT,
+      PipelineStage.REVISIONS,
+      PipelineStage.WON,
+      PipelineStage.LOST
+    ];
+  }
+  
+  // Design pipeline stages
+  if (pipelineType === PipelineType.DESIGN) {
+    return [
+      PipelineStage.NEW_DESIGN,
+      PipelineStage.DESIGN_STARTED,
+      PipelineStage.DESIGN_VERIFICATION,
+      PipelineStage.DESIGN_COMPLETE
+    ];
+  }
+  
+  // Integration pipeline stages
+  if (pipelineType === PipelineType.INTEGRATION) {
+    return [
+      PipelineStage.APPROVED,
+      PipelineStage.DEPOSIT_INVOICE_SENT,
+      PipelineStage.DEPOSIT_INVOICE_PAID,
+      PipelineStage.EQUIPMENT_ORDERED,
+      PipelineStage.EQUIPMENT_RECEIVED,
+      PipelineStage.SCHEDULED,
+      PipelineStage.INSTALLATION,
+      PipelineStage.COMMISSIONING,
+      PipelineStage.INVOICE,
+      PipelineStage.INTEGRATION_COMPLETE
+    ];
+  }
+  
+  // Service pipeline stages
+  if (pipelineType === PipelineType.SERVICE) {
+    return [
+      PipelineStage.SERVICE_REQUEST,
+      PipelineStage.SERVICE_SCHEDULED,
+      PipelineStage.SERVICE_IN_PROGRESS,
+      PipelineStage.SERVICE_COMPLETE
+    ];
+  }
+  
+  // Rental pipeline stages
+  if (pipelineType === PipelineType.RENTAL) {
+    return [
+      PipelineStage.RENTAL_REQUEST,
+      PipelineStage.RENTAL_QUOTE_SENT,
+      PipelineStage.RENTAL_ACCEPTED,
+      PipelineStage.RENTAL_SCHEDULED,
+      PipelineStage.RENTAL_OUT,
+      PipelineStage.RENTAL_RETURNED,
+      PipelineStage.RENTAL_INVOICED,
+      PipelineStage.RENTAL_COMPLETE
+    ];
+  }
+  
+  return [];
+}
+
+// Helper to format stage titles for display
+function formatStageTitle(stage: string): string {
+  return stage
+    .split('_')
+    .map(word => word.charAt(0) + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+// Helper function to get the default stage for each pipeline type
+function getDefaultStage(pipelineType: PipelineType): PipelineStage {
+  switch (pipelineType) {
+    case PipelineType.SALES:
+      return PipelineStage.NEW_LEAD;
+    case PipelineType.DESIGN:
+      return PipelineStage.NEW_DESIGN;
+    case PipelineType.INTEGRATION:
+      return PipelineStage.APPROVED;
+    case PipelineType.SERVICE:
+      return PipelineStage.SERVICE_REQUEST;
+    case PipelineType.RENTAL:
+      return PipelineStage.RENTAL_REQUEST;
+    default:
+      return PipelineStage.NEW_LEAD;
+  }
+}
+
+// Helper function to create type-specific details record
+async function createCardDetails(cardId: string, pipelineType: PipelineType) {
+  switch (pipelineType) {
+    case PipelineType.SALES:
+      await prisma.salesCardDetails.create({
+        data: {
+          cardId,
+          estimatedValue: 0,
+        }
+      });
+      break;
+    case PipelineType.DESIGN:
+      await prisma.designCardDetails.create({
+        data: {
+          cardId,
+          estimatedHours: 0,
+        }
+      });
+      break;
+    case PipelineType.INTEGRATION:
+      await prisma.integrationCardDetails.create({
+        data: {
+          cardId,
+          approvedProposalValue: 0,
+          depositAmount: 0,
+          siteReadinessChecklistComplete: false,
+        }
+      });
+      break;
+    default:
+      // No details for other types yet
+      break;
+  }
+}
+
+// Helper function to create a default project if needed
+async function createDefaultProject() {
+  try {
+    // Check if there's a default customer
+    let defaultCustomer = await prisma.customer.findFirst();
+    
+    // If no customers exist, create one
+    if (!defaultCustomer) {
+      defaultCustomer = await prisma.customer.create({
+        data: {
+          name: 'Default Customer',
+          status: 'Active',
+        }
+      });
+    }
+    
+    // Create a default project
+    const project = await prisma.project.create({
+      data: {
+        customerId: defaultCustomer.id,
+        name: 'Default Project',
+        projectStatus: 'Active',
+      }
+    });
+    
+    return project;
+  } catch (error) {
+    console.error('Error creating default project:', error);
+    throw error;
   }
 }

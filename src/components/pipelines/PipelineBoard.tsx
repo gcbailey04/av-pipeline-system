@@ -1,14 +1,15 @@
-
+// src/components/pipelines/PipelineBoard.tsx
 import React, { useState } from 'react'
-import type { Card as CardType, Pipeline, PipelineType } from '../../types/pipeline'
+import type { Card as CardType, Pipeline } from '@/types/pipeline'
 import { PipelineColumn } from './PipelineColumn'
 import { CardEditDialog } from './CardEditDialog'
-import { Alert, AlertDescription } from '../../components/ui/alert'
-import { Skeleton } from '../../components/ui/skeleton'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Skeleton } from '@/components/ui/skeleton'
 import { AddCardButton } from './AddCardButton'
+import { PipelineType } from '@prisma/client'
 
 interface PipelineBoardProps<T extends CardType> {
-  pipeline: Pipeline<T> | null; // Changed to allow null
+  pipeline: Pipeline<T> | null;
   pipelineType: PipelineType;
   onCardMove?: (cardId: string, sourceColumnId: string, targetColumnId: string) => void;
   onCardClick?: (card: T) => void;
@@ -123,13 +124,25 @@ export const PipelineBoard = <T extends CardType>({
         <h2 className="text-xl mb-4">No pipeline data available</h2>
         {onCardAdd && (
           <AddCardButton 
-            pipelineType={pipelineType} 
+            pipelineType={pipelineType}
             onCardAdd={onCardAdd as (newCard: CardType, files: File[]) => Promise<void>}
           />
         )}
       </div>
     );
   }
+
+  // Helper function to get the pipeline title
+  const getPipelineTitle = () => {
+    switch (pipelineType) {
+      case PipelineType.SALES: return 'Sales Pipeline';
+      case PipelineType.DESIGN: return 'Design Pipeline'; 
+      case PipelineType.SERVICE: return 'Service Pipeline';
+      case PipelineType.RENTAL: return 'Rental Pipeline';
+      case PipelineType.INTEGRATION: return 'Integration Pipeline';
+      default: return `${pipelineType} Pipeline`;
+    }
+  };
 
   return (
     <>
@@ -141,13 +154,11 @@ export const PipelineBoard = <T extends CardType>({
       
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">
-          {pipelineType === 'sales' ? 'Sales Pipeline' : 
-           pipelineType === 'service' ? 'Service Pipeline' :
-           pipelineType === 'rental' ? 'Rental Pipeline' : 'Integration Pipeline'}
+          {getPipelineTitle()}
         </h2>
         {onCardAdd && (
           <AddCardButton 
-            pipelineType={pipelineType} 
+            pipelineType={pipelineType}
             onCardAdd={onCardAdd as (newCard: CardType, files: File[]) => Promise<void>}
           />
         )}
