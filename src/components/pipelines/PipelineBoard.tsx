@@ -1,25 +1,26 @@
 // src/components/pipelines/PipelineBoard.tsx
 import React, { useState } from 'react'
-import type { Card as CardType, Pipeline } from '@/types/pipeline'
+import { Card as CardInterface, Pipeline } from '@/types/pipeline'
 import { PipelineColumn } from './PipelineColumn'
 import { CardEditDialog } from './CardEditDialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AddCardButton } from './AddCardButton'
-import { PipelineType } from '@prisma/client'
+import { PipelineType, PipelineStage } from '@prisma/client'
+import { typeToDisplayName } from '@/lib/column-helpers'
 
-interface PipelineBoardProps<T extends CardType> {
-  pipeline: Pipeline<T> | null;
+interface PipelineBoardProps {
+  pipeline: Pipeline | null;
   pipelineType: PipelineType;
   onCardMove?: (cardId: string, sourceColumnId: string, targetColumnId: string) => void;
-  onCardClick?: (card: T) => void;
-  onCardUpdate?: (cardId: string, updatedCard: T) => void;
-  onCardAdd?: (newCard: T, files: File[]) => Promise<void>;
+  onCardClick?: (card: CardInterface) => void;
+  onCardUpdate?: (cardId: string, updatedCard: CardInterface) => void;
+  onCardAdd?: (newCard: CardInterface, files: File[]) => Promise<void>;
   isLoading?: boolean;
   error?: string | null;
 }
 
-export const PipelineBoard = <T extends CardType>({
+export const PipelineBoard: React.FC<PipelineBoardProps> = ({
   pipeline,
   pipelineType,
   onCardMove,
@@ -28,62 +29,62 @@ export const PipelineBoard = <T extends CardType>({
   onCardAdd,
   isLoading = false,
   error = null
-}: PipelineBoardProps<T>) => {
+}) => {
   const [draggedCard, setDraggedCard] = useState<{
-    card: T
+    card: CardInterface
     columnId: string
   } | null>(null)
 
   // Edit dialog state
-  const [editCard, setEditCard] = useState<T | null>(null)
+  const [editCard, setEditCard] = useState<CardInterface | null>(null)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
 
-  const handleDragStart = (e: React.DragEvent, card: T) => {
+  const handleDragStart = (e: React.DragEvent, card: CardInterface) => {
     if (!pipeline) return;
     
     const columnId = pipeline.columns.find(col => 
       col.cards.some(c => c.id === card.id)
-    )?.id
+    )?.id;
 
     if (columnId) {
-      setDraggedCard({ card, columnId })
+      setDraggedCard({ card, columnId });
     }
   }
 
   const handleDrop = async (e: React.DragEvent, targetColumnId: string) => {
-    e.preventDefault()
+    e.preventDefault();
 
     if (draggedCard && draggedCard.columnId !== targetColumnId) {
       try {
-        setUpdateError(null)
+        setUpdateError(null);
         await onCardMove?.(
           draggedCard.card.id,
           draggedCard.columnId,
           targetColumnId
-        )
+        );
       } catch (err) {
-        setUpdateError('Failed to move card. Please try again.')
-        console.error('Error moving card:', err)
+        setUpdateError('Failed to move card. Please try again.');
+        console.error('Error moving card:', err);
       }
     }
 
-    setDraggedCard(null)
+    setDraggedCard(null);
   }
 
-  const handleCardEdit = (card: T) => {
-    setEditCard(card)
-    setIsEditDialogOpen(true)
-    setUpdateError(null)
+  const handleCardEdit = (card: CardInterface) => {
+    setEditCard(card);
+    setIsEditDialogOpen(true);
+    setUpdateError(null);
   }
 
-  const handleCardUpdate = async (updatedCard: T) => {
+  const handleCardUpdate = async (updatedCard: CardInterface) => {
     try {
-      setUpdateError(null)
-      await onCardUpdate?.(updatedCard.id, updatedCard)
+      setUpdateError(null);
+      await onCardUpdate?.(updatedCard.id, updatedCard);
     } catch (err) {
-      setUpdateError('Failed to update card. Please try again.')
-      console.error('Error updating card:', err)
+      setUpdateError('Failed to update card. Please try again.');
+      console.error('Error updating card:', err);
     }
   }
 
@@ -105,7 +106,7 @@ export const PipelineBoard = <T extends CardType>({
           ))}
         </div>
       </div>
-    )
+    );
   }
 
   // Error state
@@ -114,7 +115,7 @@ export const PipelineBoard = <T extends CardType>({
       <Alert variant="destructive" className="m-4">
         <AlertDescription>{error}</AlertDescription>
       </Alert>
-    )
+    );
   }
 
   // No data state (when pipeline is null but not loading)
@@ -125,7 +126,7 @@ export const PipelineBoard = <T extends CardType>({
         {onCardAdd && (
           <AddCardButton 
             pipelineType={pipelineType}
-            onCardAdd={onCardAdd as (newCard: CardType, files: File[]) => Promise<void>}
+            onCardAdd={onCardAdd}
           />
         )}
       </div>
@@ -134,14 +135,7 @@ export const PipelineBoard = <T extends CardType>({
 
   // Helper function to get the pipeline title
   const getPipelineTitle = () => {
-    switch (pipelineType) {
-      case PipelineType.SALES: return 'Sales Pipeline';
-      case PipelineType.DESIGN: return 'Design Pipeline'; 
-      case PipelineType.SERVICE: return 'Service Pipeline';
-      case PipelineType.RENTAL: return 'Rental Pipeline';
-      case PipelineType.INTEGRATION: return 'Integration Pipeline';
-      default: return `${pipelineType} Pipeline`;
-    }
+    return `${typeToDisplayName(pipelineType)} Pipeline`;
   };
 
   return (
@@ -159,7 +153,7 @@ export const PipelineBoard = <T extends CardType>({
         {onCardAdd && (
           <AddCardButton 
             pipelineType={pipelineType}
-            onCardAdd={onCardAdd as (newCard: CardType, files: File[]) => Promise<void>}
+            onCardAdd={onCardAdd}
           />
         )}
       </div>
@@ -168,7 +162,9 @@ export const PipelineBoard = <T extends CardType>({
         {pipeline.columns.map((column) => (
           <PipelineColumn
             key={column.id}
-            column={column}
+            id={column.id}
+            title={column.title}
+            cards={column.cards}
             onDragStart={handleDragStart}
             onDrop={handleDrop}
             onCardClick={onCardClick}
@@ -184,5 +180,5 @@ export const PipelineBoard = <T extends CardType>({
         onSave={handleCardUpdate}
       />
     </>
-  )
-}
+  );
+};

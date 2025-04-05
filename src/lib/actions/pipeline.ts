@@ -77,8 +77,7 @@ export async function requestDesign(
     });
 
     // Revalidation
-    revalidatePath(`/pipelines/SALES`);
-    revalidatePath(`/pipelines/DESIGN`);
+    revalidatePath(`/pipeline`);
 
     return { success: true, designCardId: result.id };
 
@@ -165,8 +164,7 @@ export async function completeDesign(
     });
 
     // Revalidation
-    revalidatePath(`/pipelines/SALES`);
-    revalidatePath(`/pipelines/DESIGN`);
+    revalidatePath(`/pipeline`);
 
     return { success: true, salesCardId: result.id };
   } catch (error) {
@@ -254,8 +252,7 @@ export async function createIntegration(
     });
 
     // Revalidation
-    revalidatePath(`/pipelines/SALES`);
-    revalidatePath(`/pipelines/INTEGRATION`);
+    revalidatePath(`/pipeline`);
 
     return { success: true, integrationCardId: result.id };
   } catch (error) {

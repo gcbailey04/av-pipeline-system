@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { PlusCircle } from 'lucide-react';
 import { PipelineType } from '@prisma/client';
 import { CardAddDialog } from './CardAddDialog';
+import { typeToDisplayName } from '@/lib/column-helpers';
 
 interface AddCardButtonProps {
   pipelineType: PipelineType;
@@ -37,8 +38,10 @@ export const AddCardButton: React.FC<AddCardButtonProps> = ({
         return 'Add Rental Request';
       case PipelineType.INTEGRATION:
         return 'Add Integration Project';
+      case PipelineType.REPAIR:
+        return 'Add Repair Request';
       default:
-        return 'Add Project';
+        return `Add ${typeToDisplayName(pipelineType)}`;
     }
   };
 

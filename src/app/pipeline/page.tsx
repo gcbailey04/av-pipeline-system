@@ -5,38 +5,12 @@ import React, { useState, useEffect } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PipelineBoard } from '@/components/pipelines/PipelineBoard'
 import { useToast } from '@/components/ui/use-toast'
-import { PipelineType } from '@prisma/client'
-
-interface CardType {
-  id: string;
-  type: string;
-  stage: string;
-  status?: string;
-  title: string;
-  description?: string;
-  projectNumber?: string;
-  projectId?: string; // Added this property to fix the error
-  dueDate?: Date | string | null;
-  lastModified?: Date | string;
-  lastInteraction?: Date | string;
-  documents?: any[];
-  // Other properties as needed
-}
-
-interface PipelineColumn {
-  id: string;
-  title: string;
-  cards: CardType[];
-}
-
-interface Pipeline {
-  id: string;
-  type: string;
-  columns: PipelineColumn[];
-}
+import { PipelineType, PipelineStage, PipelineStatus } from '@prisma/client'
+import { Card as CardInterface, Pipeline } from '@/types/pipeline'
+import { typeToDisplayName, stageToDisplayName } from '@/lib/column-helpers'
 
 export default function PipelinePage() {
-  const [activeTab, setActiveTab] = useState<string>(PipelineType.SALES);
+  const [activeTab, setActiveTab] = useState<PipelineType>(PipelineType.SALES);
   const [pipeline, setPipeline] = useState<Pipeline | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +20,7 @@ export default function PipelinePage() {
     fetchPipelineData(activeTab);
   }, [activeTab]);
 
-  const fetchPipelineData = async (type: string) => {
+  const fetchPipelineData = async (type: PipelineType) => {
     setLoading(true);
     setError(null);
     try {
@@ -62,18 +36,15 @@ export default function PipelinePage() {
       const pipeline: Pipeline = {
         id: `${type}-pipeline`,
         type,
-        columns: columns.map((column: any): PipelineColumn => ({
+        columns: columns.map((column: any) => ({
           id: column.id,
           title: column.title,
           cards: column.cards.map((card: any) => ({
             ...card,
-            type: card.type || type, // In new model, type is part of the card
-            // Ensure dates are Date objects
-            createdAt: card.createdAt ? new Date(card.createdAt) : new Date(),
-            updatedAt: card.updatedAt ? new Date(card.updatedAt) : new Date(),
-            lastModified: card.updatedAt ? new Date(card.updatedAt) : new Date(),
-            lastInteraction: card.updatedAt ? new Date(card.updatedAt) : new Date(),
-            dueDate: card.dueDate ? new Date(card.dueDate) : null,
+            // Ensure any string-based enums are converted to proper enum values
+            type: card.type || type,
+            stage: card.stage,
+            status: card.status || PipelineStatus.OPEN,
           }))
         }))
       };
@@ -105,6 +76,10 @@ export default function PipelinePage() {
       const targetColumn = pipeline.columns.find(col => col.id === targetColumnId);
       if (!targetColumn) throw new Error("Target column not found");
       
+      // Convert target column title to the corresponding stage enum value
+      // This assumes targetColumnId is in the format expected by the backend
+      const targetStage = targetColumnId as PipelineStage;
+      
       // First update UI (optimistic update)
       setPipeline((currentPipeline): Pipeline | null => {
         if (!currentPipeline) return null;
@@ -121,8 +96,8 @@ export default function PipelinePage() {
             // Create updated card
             const updatedCard = {
               ...cardToMove,
-              stage: targetColumn.title,
-              lastModified: new Date()
+              stage: targetStage,
+              updatedAt: new Date()
             };
             
             return {
@@ -148,7 +123,7 @@ export default function PipelinePage() {
         },
         body: JSON.stringify({
           cardId,
-          stage: targetColumn.title
+          stage: targetColumnId // Using column ID directly, the API will handle conversion
         }),
       });
       
@@ -174,7 +149,7 @@ export default function PipelinePage() {
     }
   };
   
-  const handleCardUpdate = async (cardId: string, updatedCard: CardType) => {
+  const handleCardUpdate = async (cardId: string, updatedCard: CardInterface) => {
     if (!pipeline) return;
     
     try {
@@ -188,7 +163,7 @@ export default function PipelinePage() {
             if (card.id === cardId) {
               return {
                 ...updatedCard,
-                lastModified: new Date()
+                updatedAt: new Date()
               };
             }
             return card;
@@ -242,22 +217,14 @@ export default function PipelinePage() {
     }
   };
 
-  // Helper function to get or create a default project
-  async function getOrCreateDefaultProject(pipelineType: string): Promise<string> {
-    // For now, return a hardcoded project ID for testing
-    // In production, this should query the database for an appropriate project
-    // or create one if needed
-    return "clmfgyzx40000lf08rb30f6q3"; // Replace with a valid project ID from your database
-  }
-
-  const handleCardAdd = async (newCard: CardType, files: File[]) => {
+  const handleCardAdd = async (newCard: CardInterface, files: File[]) => {
     try {
       // Prepare the card data for the API
       const cardData = {
         type: activeTab,
         title: newCard.title,
-        description: newCard.description,
-        projectId: newCard.projectId || await getOrCreateDefaultProject(activeTab)
+        description: newCard.notes,
+        projectId: newCard.projectId
       };
 
       // Send card to API
@@ -277,7 +244,7 @@ export default function PipelinePage() {
       // Get the created card with its assigned ID from the server
       const createdCard = await response.json();
       
-      // Upload files if any - you'll need to update this when you implement document handling
+      // Upload files if any - implement this when you have document handling
       if (files.length > 0) {
         // Handle file uploads here
         console.log('Files to upload:', files);
@@ -300,7 +267,7 @@ export default function PipelinePage() {
     }
   };
 
-  const handleCardClick = (card: CardType) => {
+  const handleCardClick = (card: CardInterface) => {
     console.log('Card clicked:', card);
     // You could open a detailed view or expanded information panel here
   };
@@ -309,21 +276,31 @@ export default function PipelinePage() {
     <div className="h-screen p-4 bg-gray-100">
       <Tabs 
         value={activeTab} 
-        onValueChange={(value) => setActiveTab(value)}
+        onValueChange={(value) => setActiveTab(value as PipelineType)}
       >
         <TabsList className="mb-6">
-          <TabsTrigger value={PipelineType.SALES}>Sales Pipeline</TabsTrigger>
-          <TabsTrigger value={PipelineType.DESIGN}>Design Pipeline</TabsTrigger>
-          <TabsTrigger value={PipelineType.INTEGRATION}>Integration Pipeline</TabsTrigger>
-          <TabsTrigger value={PipelineType.SERVICE}>Service Pipeline</TabsTrigger>
-          <TabsTrigger value={PipelineType.RENTAL}>Rental Pipeline</TabsTrigger>
+          <TabsTrigger value={PipelineType.SALES}>
+            {typeToDisplayName(PipelineType.SALES)} Pipeline
+          </TabsTrigger>
+          <TabsTrigger value={PipelineType.DESIGN}>
+            {typeToDisplayName(PipelineType.DESIGN)} Pipeline
+          </TabsTrigger>
+          <TabsTrigger value={PipelineType.INTEGRATION}>
+            {typeToDisplayName(PipelineType.INTEGRATION)} Pipeline
+          </TabsTrigger>
+          <TabsTrigger value={PipelineType.SERVICE}>
+            {typeToDisplayName(PipelineType.SERVICE)} Pipeline
+          </TabsTrigger>
+          <TabsTrigger value={PipelineType.RENTAL}>
+            {typeToDisplayName(PipelineType.RENTAL)} Pipeline
+          </TabsTrigger>
         </TabsList>
 
         <div className="h-[calc(100vh-12rem)]">
           <TabsContent value={activeTab} forceMount>
             <PipelineBoard
-              pipeline={pipeline as any} // Use type assertion to bypass the type checking for now
-              pipelineType={activeTab as any} // Use type assertion to bypass the type checking for now
+              pipeline={pipeline}
+              pipelineType={activeTab}
               onCardMove={handleCardMove}
               onCardClick={handleCardClick}
               onCardUpdate={handleCardUpdate}

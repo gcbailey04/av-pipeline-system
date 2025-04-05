@@ -4,11 +4,13 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { PipelineType, PipelineStage, PipelineStatus } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
+import { stageToDisplayName } from '@/lib/column-helpers';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const typeParam = searchParams.get('type')?.toUpperCase();
 
+  // Validate the pipeline type
   if (!typeParam || !Object.values(PipelineType).includes(typeParam as PipelineType)) {
     return NextResponse.json({ 
       error: 'Valid pipeline type is required (SALES, DESIGN, INTEGRATION, SERVICE, or RENTAL)' 
@@ -44,9 +46,10 @@ export async function GET(request: Request) {
     // Group cards by stage
     const cardsByStage: Record<string, any[]> = {};
     
-    // Initialize all stages to ensure we have columns even for empty stages
+    // Get all relevant stages for this pipeline type
     const relevantStages = getPipelineStages(pipelineType);
     
+    // Initialize all stages to ensure we have columns even for empty stages
     relevantStages.forEach(stage => {
       cardsByStage[stage] = [];
     });
@@ -62,7 +65,7 @@ export async function GET(request: Request) {
     // Convert to array format for the frontend
     const columns = Object.entries(cardsByStage).map(([stage, cards]) => ({
       id: stage,
-      title: formatStageTitle(stage),
+      title: stageToDisplayName(stage as PipelineStage),
       cards
     }));
     
@@ -205,10 +208,22 @@ export async function PATCH(request: Request) {
     };
     
     if (stage) {
-      updateData.stage = stage;
+      // Convert from display name to enum if needed
+      const stageValue = typeof stage === 'string' && !Object.values(PipelineStage).includes(stage as PipelineStage)
+        ? findStageEnumFromDisplayName(stage, existingCard.type as PipelineType)
+        : stage;
+        
+      updateData.stage = stageValue;
     }
     
     if (status) {
+      // Ensure status is a valid enum
+      if (!Object.values(PipelineStatus).includes(status as PipelineStatus)) {
+        return NextResponse.json({ 
+          error: 'Invalid status value' 
+        }, { status: 400 });
+      }
+      
       updateData.status = status;
     }
     
@@ -240,8 +255,8 @@ export async function PATCH(request: Request) {
   }
 }
 
-// Helper to get relevant stages for a pipeline type
-function getPipelineStages(pipelineType: PipelineType): string[] {
+// Helper function: Get relevant stages for a pipeline type
+function getPipelineStages(pipelineType: PipelineType): PipelineStage[] {
   // Sales pipeline stages
   if (pipelineType === PipelineType.SALES) {
     return [
@@ -310,15 +325,29 @@ function getPipelineStages(pipelineType: PipelineType): string[] {
   return [];
 }
 
-// Helper to format stage titles for display
-function formatStageTitle(stage: string): string {
-  return stage
-    .split('_')
-    .map(word => word.charAt(0) + word.slice(1).toLowerCase())
-    .join(' ');
+// Helper function: Convert display name to enum
+function findStageEnumFromDisplayName(displayName: string, pipelineType: PipelineType): PipelineStage {
+  // Convert display name to a format close to enum (uppercase with underscores)
+  const enumFormat = displayName.toUpperCase().replace(/\s+/g, '_');
+  
+  // Find the matching enum value
+  const enumValue = Object.entries(PipelineStage).find(([key, value]) => {
+    // Match directly if the format matches
+    if (key === enumFormat) return true;
+    
+    // For pipeline-specific stages, match by content
+    if (pipelineType === PipelineType.SALES && key.includes('LEAD') && enumFormat.includes('LEAD')) return true;
+    if (pipelineType === PipelineType.DESIGN && key.includes('DESIGN') && enumFormat.includes('DESIGN')) return true;
+    if (pipelineType === PipelineType.INTEGRATION && key.includes('INVOICE') && enumFormat.includes('INVOICE')) return true;
+    
+    return false;
+  });
+  
+  // Return the matched enum or a default
+  return enumValue ? enumValue[1] as PipelineStage : getDefaultStage(pipelineType);
 }
 
-// Helper function to get the default stage for each pipeline type
+// Helper function: Get default stage for each pipeline type
 function getDefaultStage(pipelineType: PipelineType): PipelineStage {
   switch (pipelineType) {
     case PipelineType.SALES:
@@ -329,6 +358,8 @@ function getDefaultStage(pipelineType: PipelineType): PipelineStage {
       return PipelineStage.APPROVED;
     case PipelineType.SERVICE:
       return PipelineStage.SERVICE_REQUEST;
+    case PipelineType.REPAIR:
+      return PipelineStage.REPAIR_REQUEST;
     case PipelineType.RENTAL:
       return PipelineStage.RENTAL_REQUEST;
     default:
@@ -336,7 +367,7 @@ function getDefaultStage(pipelineType: PipelineType): PipelineStage {
   }
 }
 
-// Helper function to create type-specific details record
+// Helper function: Create type-specific details record
 async function createCardDetails(cardId: string, pipelineType: PipelineType) {
   switch (pipelineType) {
     case PipelineType.SALES:
@@ -371,7 +402,7 @@ async function createCardDetails(cardId: string, pipelineType: PipelineType) {
   }
 }
 
-// Helper function to create a default project if needed
+// Helper function: Create a default project if needed
 async function createDefaultProject() {
   try {
     // Check if there's a default customer

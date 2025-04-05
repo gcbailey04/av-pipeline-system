@@ -1,41 +1,24 @@
-// src/components/pipelines/PipelineCard.tsx
 import React from 'react'
 import { Clock, AlertCircle, Paperclip, RotateCw, Edit2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { PipelineActionButtons } from '@/components/pipelines/PipelineActionButtons'
-import { PipelineType, PipelineStage, PipelineStatus } from '@prisma/client'
-
-// This is a temporary interface for the transition period
-// Eventually we should use the actual Prisma types
-interface CardType {
-  id: string;
-  type: string;
-  stage: string;
-  title: string;
-  projectNumber?: string;
-  description?: string;
-  dueDate?: Date | string | null;
-  lastModified?: Date | string;
-  lastInteraction?: Date | string;
-  documents?: any[];
-  automationStatus?: {
-    emailLogged?: boolean;
-    alertsSent?: boolean;
-    documentsGenerated?: boolean;
-  };
-  // Legacy type-specific properties
-  estimateValue?: number;
-  serviceType?: string;
-  eventDate?: Date | string;
-}
+import { PipelineStatus } from '@prisma/client'
+import { 
+  Card as CardInterface, 
+  SalesCard, 
+  DesignCard, 
+  IntegrationCard,
+  PipelineType
+} from '@/types/pipeline'
+import { stageToDisplayName } from '@/lib/column-helpers'
 
 interface PipelineCardProps {
-  card: CardType;
-  onDragStart?: (e: React.DragEvent, card: CardType) => void;
-  onClick?: (card: CardType) => void;
-  onEdit?: (card: CardType) => void;
+  card: CardInterface;
+  onDragStart?: (e: React.DragEvent, card: CardInterface) => void;
+  onClick?: (card: CardInterface) => void;
+  onEdit?: (card: CardInterface) => void;
 }
 
 const getStatusColor = (lastInteraction: Date | string | null | undefined): string => {
@@ -72,88 +55,17 @@ const formatDate = (date: Date | string | null | undefined) => {
   }
 }
 
-// Helper function to map string-based type to enum-based PipelineType
-const mapCardTypeToEnum = (type: string): PipelineType => {
-  switch(type.toLowerCase()) {
-    case 'sales': return PipelineType.SALES;
-    case 'design': return PipelineType.DESIGN;
-    case 'integration': return PipelineType.INTEGRATION;
-    case 'service': return PipelineType.SERVICE;
-    case 'rental': return PipelineType.RENTAL;
-    default: return PipelineType.SALES;
-  }
+// Type guards to narrow card types
+const isSalesCard = (card: CardInterface): card is SalesCard => {
+  return card.type === PipelineType.SALES;
 }
 
-// Helper function to map string-based stage to enum-based PipelineStage
-const mapCardStageToEnum = (type: string, stage: string): PipelineStage => {
-  const lowerType = type.toLowerCase();
-  const lowerStage = stage.toLowerCase();
-  
-  if (lowerType === 'sales') {
-    if (lowerStage.includes('new lead')) return PipelineStage.NEW_LEAD;
-    if (lowerStage.includes('qualified')) return PipelineStage.QUALIFIED;
-    if (lowerStage.includes('appointment scheduled')) return PipelineStage.APPOINTMENT_SCHEDULED;
-    if (lowerStage.includes('appointment complete')) return PipelineStage.APPOINTMENT_COMPLETE;
-    if (lowerStage.includes('design')) return PipelineStage.DESIGN_STARTED;
-    if (lowerStage.includes('proposal') && !lowerStage.includes('sent')) return PipelineStage.PROPOSAL;
-    if (lowerStage.includes('proposal sent')) return PipelineStage.PROPOSAL_SENT;
-    if (lowerStage.includes('revisions') && !lowerStage.includes('sent')) return PipelineStage.REVISIONS;
-    if (lowerStage.includes('won')) return PipelineStage.WON;
-    if (lowerStage.includes('lost')) return PipelineStage.LOST;
-  } 
-  else if (lowerType === 'design') {
-    if (lowerStage.includes('new design')) return PipelineStage.NEW_DESIGN;
-    if (lowerStage.includes('design started')) return PipelineStage.DESIGN_STARTED;
-    if (lowerStage.includes('verification')) return PipelineStage.DESIGN_VERIFICATION;
-    if (lowerStage.includes('complete')) return PipelineStage.DESIGN_COMPLETE;
-  }
-  else if (lowerType === 'integration') {
-    if (lowerStage.includes('approved')) return PipelineStage.APPROVED;
-    if (lowerStage.includes('invoice sent')) return PipelineStage.DEPOSIT_INVOICE_SENT;
-    if (lowerStage.includes('paid')) return PipelineStage.DEPOSIT_INVOICE_PAID;
-    if (lowerStage.includes('equipment ordered')) return PipelineStage.EQUIPMENT_ORDERED;
-    if (lowerStage.includes('equipment received')) return PipelineStage.EQUIPMENT_RECEIVED;
-    if (lowerStage.includes('scheduled')) return PipelineStage.SCHEDULED;
-    if (lowerStage.includes('installation')) return PipelineStage.INSTALLATION;
-    if (lowerStage.includes('commission')) return PipelineStage.COMMISSIONING;
-    if (lowerStage.includes('ready to invoice')) return PipelineStage.INVOICE;
-    if (lowerStage.includes('invoiced')) return PipelineStage.INTEGRATION_COMPLETE;
-  }
-  
-  // Fallback to a suitable default based on type
-  if (lowerType === 'sales') return PipelineStage.NEW_LEAD;
-  if (lowerType === 'design') return PipelineStage.NEW_DESIGN;
-  if (lowerType === 'integration') return PipelineStage.APPROVED;
-  if (lowerType === 'service') return PipelineStage.SERVICE_REQUEST;
-  if (lowerType === 'rental') return PipelineStage.RENTAL_REQUEST;
-  
-  return PipelineStage.NEW_LEAD;
+const isDesignCard = (card: CardInterface): card is DesignCard => {
+  return card.type === PipelineType.DESIGN;
 }
 
-// Helper to determine the status enum
-const determineCardStatus = (card: CardType): PipelineStatus => {
-  // If this is already using the new model with proper status field
-  if ('status' in card && typeof card.status === 'string') {
-    try {
-      return card.status as PipelineStatus;
-    } catch (e) {
-      // Fall through to inferring logic
-    }
-  }
-  
-  // Legacy logic to infer status
-  if (card.type.toLowerCase() === 'sales' && 
-      card.stage.toLowerCase().includes('design')) {
-    return PipelineStatus.WAITING_DESIGN;
-  }
-  
-  if (card.stage.toLowerCase().includes('lost') || 
-      card.stage.toLowerCase().includes('complete') || 
-      card.stage.toLowerCase().includes('invoiced')) {
-    return PipelineStatus.CLOSED;
-  }
-  
-  return PipelineStatus.OPEN;
+const isIntegrationCard = (card: CardInterface): card is IntegrationCard => {
+  return card.type === PipelineType.INTEGRATION;
 }
 
 export const PipelineCard: React.FC<PipelineCardProps> = ({
@@ -162,18 +74,13 @@ export const PipelineCard: React.FC<PipelineCardProps> = ({
   onClick,
   onEdit
 }) => {
-  const statusColor = getStatusColor(card.lastInteraction);
+  const statusColor = getStatusColor(card.updatedAt);
   
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent card click event
     onEdit?.(card);
   }
 
-  // Map string-based types to enum-based types for the action buttons
-  const cardTypeEnum = mapCardTypeToEnum(card.type);
-  const cardStageEnum = mapCardStageToEnum(card.type, card.stage as string);
-  const cardStatusEnum = determineCardStatus(card);
-  
   return (
     <Card 
       draggable
@@ -184,7 +91,7 @@ export const PipelineCard: React.FC<PipelineCardProps> = ({
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg font-medium">
-            {card.projectNumber || card.title}
+            {card.title}
           </CardTitle>
           <div className="flex gap-2 items-center">
             <button
@@ -213,27 +120,37 @@ export const PipelineCard: React.FC<PipelineCardProps> = ({
           </div>
         </div>
         <CardDescription className="line-clamp-2">
-          {card.description || card.title}
+          {card.notes || card.title}
         </CardDescription>
       </CardHeader>
 
       <CardContent className="pb-2">
         <div className="flex flex-wrap gap-2">
-          {'estimateValue' in card && (
+          {/* Type-specific detail badges - using type guards for proper narrowing */}
+          {isSalesCard(card) && card.salesDetails?.estimatedValue && (
             <Badge variant="outline">
-              ${(card as any).estimateValue?.toLocaleString() || '0'}
+              ${card.salesDetails.estimatedValue.toLocaleString()}
             </Badge>
           )}
-          {'serviceType' in card && (
+          
+          {isDesignCard(card) && card.designDetails?.estimatedHours && (
             <Badge variant="outline">
-              {(card as any).serviceType || 'N/A'}
+              Est. {card.designDetails.estimatedHours}h
             </Badge>
           )}
-          {'eventDate' in card && card.eventDate && (
+          
+          {isIntegrationCard(card) && card.integrationDetails?.approvedProposalValue && (
             <Badge variant="outline">
-              {formatDate((card as any).eventDate)}
+              ${card.integrationDetails.approvedProposalValue.toLocaleString()}
             </Badge>
           )}
+          
+          {/* Stage badge */}
+          <Badge variant="secondary">
+            {stageToDisplayName(card.stage)}
+          </Badge>
+          
+          {/* Documents badge */}
           {card.documents && card.documents.length > 0 && (
             <Badge variant="outline" className="flex items-center gap-1">
               <Paperclip className="h-3 w-3" />
@@ -242,15 +159,14 @@ export const PipelineCard: React.FC<PipelineCardProps> = ({
           )}
         </div>
         
-        {/* Add the action buttons */}
+        {/* Action buttons for pipeline transitions */}
         <PipelineActionButtons
           cardId={card.id}
-          cardType={cardTypeEnum}
-          cardStage={cardStageEnum}
-          cardStatus={cardStatusEnum}
+          cardType={card.type}
+          cardStage={card.stage}
+          cardStatus={card.status}
           onActionComplete={() => {
             // This callback is optional - you can use it to refresh data if needed
-            // For now, we'll rely on the revalidatePath in the server actions
           }}
         />
       </CardContent>
@@ -258,29 +174,30 @@ export const PipelineCard: React.FC<PipelineCardProps> = ({
       <CardFooter className="pt-2">
         <div className="flex justify-between items-center w-full text-sm text-gray-500">
           <span>
-            Last updated: {formatDate(card.lastModified)}
+            Last updated: {formatDate(card.updatedAt)}
           </span>
+          {/* Status indicators */}
           <div className="flex gap-2">
-            {card.automationStatus?.alertsSent && (
+            {card.status === PipelineStatus.WAITING_DESIGN && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger>
                     <AlertCircle className="h-4 w-4 text-yellow-500" />
                   </TooltipTrigger>
                   <TooltipContent>
-                    Automated alerts sent
+                    Waiting for design completion
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}
-            {card.automationStatus?.emailLogged && (
+            {card.status === PipelineStatus.ON_HOLD && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger>
                     <RotateCw className="h-4 w-4 text-blue-500" />
                   </TooltipTrigger>
                   <TooltipContent>
-                    Email communication logged
+                    Project on hold
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

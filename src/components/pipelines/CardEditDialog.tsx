@@ -1,40 +1,41 @@
-import React from 'react';
+// src/components/pipelines/CardEditDialog.tsx
+
+import React, { useState, useEffect } from 'react';
 import { 
-  Card as CardType, 
-  SalesCard, 
-  ServiceCard, 
-  RentalCard,
+  Card as CardInterface, 
+  SalesCard,
+  DesignCard,
   IntegrationCard,
-  SalesStage,
-  ServiceStage,
-  RentalStage,
-  IntegrationStage
-} from '../../types/pipeline';
+  ServiceCard,
+  RentalCard,
+  RepairCard
+} from '@/types/pipeline';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from '../../components/ui/dialog';
-import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
-import { Textarea } from '../../components/ui/textarea';
-import { Label } from '../../components/ui/label';
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../../components/ui/select';
-import { getPipelineStages } from '../../lib/column-helpers';
+} from '@/components/ui/select';
+import { PipelineType, PipelineStage, PipelineStatus } from '@prisma/client';
+import { getPipelineStages, stageToDisplayName } from '@/lib/column-helpers';
 
-interface CardEditDialogProps<T extends CardType> {
-  card: T | null;
+interface CardEditDialogProps {
+  card: CardInterface | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (updatedCard: T) => void;
+  onSave: (updatedCard: CardInterface) => void;
 }
 
 const formatDateForInput = (date: Date | null | undefined): string => {
@@ -43,129 +44,51 @@ const formatDateForInput = (date: Date | null | undefined): string => {
   return d.toISOString().split('T')[0];
 };
 
-export const CardEditDialog = <T extends CardType>({
+export const CardEditDialog: React.FC<CardEditDialogProps> = ({
   card,
   open,
   onOpenChange,
   onSave,
-}: CardEditDialogProps<T>) => {
-  // Type-specific form data to maintain type safety
-  const [salesFormData, setSalesFormData] = React.useState<Partial<SalesCard> | null>(null);
-  const [serviceFormData, setServiceFormData] = React.useState<Partial<ServiceCard> | null>(null);
-  const [rentalFormData, setRentalFormData] = React.useState<Partial<RentalCard> | null>(null);
-  const [integrationFormData, setIntegrationFormData] = React.useState<Partial<IntegrationCard> | null>(null);
+}) => {
+  // State for the current form data
+  const [formData, setFormData] = useState<CardInterface | null>(null);
 
-  // Initialize the appropriate form data when card changes
-  React.useEffect(() => {
+  // Initialize form data when card changes
+  useEffect(() => {
     if (!card) {
-      setSalesFormData(null);
-      setServiceFormData(null);
-      setRentalFormData(null);
-      setIntegrationFormData(null);
+      setFormData(null);
       return;
     }
 
-    switch (card.type) {
-      case 'sales':
-        setSalesFormData({ ...card as SalesCard });
-        setServiceFormData(null);
-        setRentalFormData(null);
-        setIntegrationFormData(null);
-        break;
-      case 'service':
-        setSalesFormData(null);
-        setServiceFormData({ ...card as ServiceCard });
-        setRentalFormData(null);
-        setIntegrationFormData(null);
-        break;
-      case 'rental':
-        setSalesFormData(null);
-        setServiceFormData(null);
-        setRentalFormData({ ...card as RentalCard });
-        setIntegrationFormData(null);
-        break;
-      case 'integration':
-        setSalesFormData(null);
-        setServiceFormData(null);
-        setRentalFormData(null);
-        setIntegrationFormData({ ...card as IntegrationCard });
-        break;
-    }
+    // Create a deep copy to avoid direct mutation
+    setFormData(JSON.parse(JSON.stringify(card)));
   }, [card]);
 
-  if (!card) return null;
-
-  // Helper to get the current form data based on card type
-  const getFormData = () => {
-    switch (card.type) {
-      case 'sales': return salesFormData;
-      case 'service': return serviceFormData;
-      case 'rental': return rentalFormData;
-      case 'integration': return integrationFormData;
-      default: return null;
-    }
-  };
-
-  const formData = getFormData();
-  if (!formData) return null;
-
-  // Helper to update the appropriate form data
-  const updateFormData = (updates: any) => {
-    switch (card.type) {
-      case 'sales':
-        setSalesFormData(prev => prev ? { ...prev, ...updates } : null);
-        break;
-      case 'service':
-        setServiceFormData(prev => prev ? { ...prev, ...updates } : null);
-        break;
-      case 'rental':
-        setRentalFormData(prev => prev ? { ...prev, ...updates } : null);
-        break;
-      case 'integration':
-        setIntegrationFormData(prev => prev ? { ...prev, ...updates } : null);
-        break;
-    }
-  };
+  if (!card || !formData) return null;
 
   const handleStageChange = (value: string) => {
-    switch (card.type) {
-      case 'sales':
-        setSalesFormData(prev => prev ? { ...prev, stage: value as SalesStage } : null);
-        break;
-      case 'service':
-        setServiceFormData(prev => prev ? { ...prev, stage: value as ServiceStage } : null);
-        break;
-      case 'rental':
-        setRentalFormData(prev => prev ? { ...prev, stage: value as RentalStage } : null);
-        break;
-      case 'integration':
-        setIntegrationFormData(prev => prev ? { ...prev, stage: value as IntegrationStage } : null);
-        break;
+    // Find the stage enum value by title
+    const stages = getPipelineStages(card.type);
+    const matchedStage = stages.find(s => s.title === value);
+    
+    if (matchedStage) {
+      setFormData(prev => prev ? {
+        ...prev,
+        stage: matchedStage.stage
+      } : null);
     }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Create a merged card with the updated form data
-    let updatedCard;
+    if (!formData) return;
     
-    switch (card.type) {
-      case 'sales':
-        updatedCard = { ...card, ...salesFormData } as T;
-        break;
-      case 'service':
-        updatedCard = { ...card, ...serviceFormData } as T;
-        break;
-      case 'rental':
-        updatedCard = { ...card, ...rentalFormData } as T;
-        break;
-      case 'integration':
-        updatedCard = { ...card, ...integrationFormData } as T;
-        break;
-      default:
-        return;
-    }
+    // Update the last modified date
+    const updatedCard = {
+      ...formData,
+      updatedAt: new Date()
+    };
     
     onSave(updatedCard);
     onOpenChange(false);
@@ -178,7 +101,7 @@ export const CardEditDialog = <T extends CardType>({
         <Input
           id="title"
           value={formData.title || ''}
-          onChange={(e) => updateFormData({ title: e.target.value })}
+          onChange={(e) => setFormData(prev => prev ? { ...prev, title: e.target.value } : null)}
         />
       </div>
 
@@ -186,26 +109,49 @@ export const CardEditDialog = <T extends CardType>({
         <Label htmlFor="description">Description</Label>
         <Textarea
           id="description"
-          value={formData.description || ''}
-          onChange={(e) => updateFormData({ description: e.target.value })}
+          value={formData.notes || ''}
+          onChange={(e) => setFormData(prev => prev ? { ...prev, notes: e.target.value } : null)}
         />
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="stage">Stage</Label>
         <Select
-          value={formData.stage as string}
+          value={stageToDisplayName(formData.stage)}
           onValueChange={handleStageChange}
         >
           <SelectTrigger>
             <SelectValue placeholder="Select stage" />
           </SelectTrigger>
           <SelectContent>
-            {getPipelineStages(card.type).map((stage) => (
-              <SelectItem key={stage.id} value={stage.title}>
-                {stage.title}
+            {getPipelineStages(card.type).map((stageInfo) => (
+              <SelectItem key={stageInfo.id} value={stageInfo.title}>
+                {stageInfo.title}
               </SelectItem>
             ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="status">Status</Label>
+        <Select
+          value={formData.status}
+          onValueChange={(value: string) => 
+            setFormData(prev => prev ? { 
+              ...prev, 
+              status: value as PipelineStatus 
+            } : null)
+          }
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={PipelineStatus.OPEN}>Open</SelectItem>
+            <SelectItem value={PipelineStatus.ON_HOLD}>On Hold</SelectItem>
+            <SelectItem value={PipelineStatus.WAITING_DESIGN}>Waiting for Design</SelectItem>
+            <SelectItem value={PipelineStatus.CLOSED}>Closed</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -215,10 +161,11 @@ export const CardEditDialog = <T extends CardType>({
         <Input
           id="dueDate"
           type="date"
-          value={formatDateForInput(formData.dueDate)}
-          onChange={(e) => updateFormData({ 
+          value={formatDateForInput(formData.dueDate as Date | null)}
+          onChange={(e) => setFormData(prev => prev ? { 
+            ...prev, 
             dueDate: e.target.value ? new Date(e.target.value) : null 
-          })}
+          } : null)}
         />
       </div>
     </>
@@ -226,89 +173,114 @@ export const CardEditDialog = <T extends CardType>({
 
   const renderTypeSpecificFields = () => {
     switch (card.type) {
-      case 'sales':
+      case PipelineType.SALES:
         return (
           <div className="space-y-2">
-            <Label htmlFor="estimateValue">Estimate Value</Label>
+            <Label htmlFor="estimatedValue">Estimated Value</Label>
             <Input
-              id="estimateValue"
+              id="estimatedValue"
               type="number"
-              value={(formData as Partial<SalesCard>).estimateValue || ''}
-              onChange={(e) => updateFormData({ 
-                estimateValue: e.target.value ? parseFloat(e.target.value) : 0
-              })}
+              value={(formData as SalesCard).salesDetails?.estimatedValue || 0}
+              onChange={(e) => {
+                const value = e.target.value ? parseFloat(e.target.value) : 0;
+                setFormData(prev => {
+                  if (!prev) return null;
+                  return {
+                    ...prev,
+                    salesDetails: {
+                      ...(prev as SalesCard).salesDetails,
+                      estimatedValue: value
+                    }
+                  };
+                });
+              }}
             />
           </div>
         );
 
-      case 'service':
+      case PipelineType.DESIGN:
         return (
           <div className="space-y-2">
-            <Label htmlFor="serviceType">Service Type</Label>
-            <Select
-              value={(formData as Partial<ServiceCard>).serviceType}
-              onValueChange={(value) => updateFormData({ 
-                serviceType: value as 'maintenance' | 'repair' | 'upgrade'
-              })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select service type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="maintenance">Maintenance</SelectItem>
-                <SelectItem value="repair">Repair</SelectItem>
-                <SelectItem value="upgrade">Upgrade</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        );
-
-      case 'rental':
-        return (
-          <div className="space-y-2">
-            <Label htmlFor="eventDate">Event Date</Label>
+            <Label htmlFor="designRequirements">Design Requirements</Label>
+            <Textarea
+              id="designRequirements"
+              value={(formData as DesignCard).designDetails?.designRequirements || ''}
+              onChange={(e) => {
+                setFormData(prev => {
+                  if (!prev) return null;
+                  return {
+                    ...prev,
+                    designDetails: {
+                      ...(prev as DesignCard).designDetails,
+                      designRequirements: e.target.value
+                    }
+                  };
+                });
+              }}
+            />
+            <Label htmlFor="estimatedHours">Estimated Hours</Label>
             <Input
-              id="eventDate"
-              type="date"
-              value={formatDateForInput((formData as Partial<RentalCard>).eventDate)}
-              onChange={(e) => updateFormData({ 
-                eventDate: e.target.value ? new Date(e.target.value) : undefined 
-              })}
+              id="estimatedHours"
+              type="number"
+              value={(formData as DesignCard).designDetails?.estimatedHours || 0}
+              onChange={(e) => {
+                const value = e.target.value ? parseFloat(e.target.value) : 0;
+                setFormData(prev => {
+                  if (!prev) return null;
+                  return {
+                    ...prev,
+                    designDetails: {
+                      ...(prev as DesignCard).designDetails,
+                      estimatedHours: value
+                    }
+                  };
+                });
+              }}
             />
           </div>
         );
 
-      case 'integration':
+      case PipelineType.INTEGRATION:
         return (
           <div className="space-y-2">
-            <Label htmlFor="equipmentStatus">Equipment Status</Label>
-            <div className="space-y-2">
-              <label className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  checked={(formData as Partial<IntegrationCard>).equipmentStatus?.ordered || false}
-                  onChange={(e) => updateFormData({ 
-                    equipmentStatus: {
-                      ...(formData as Partial<IntegrationCard>).equipmentStatus,
-                      ordered: e.target.checked
+            <Label htmlFor="approvedProposalValue">Approved Proposal Value</Label>
+            <Input
+              id="approvedProposalValue"
+              type="number"
+              value={(formData as IntegrationCard).integrationDetails?.approvedProposalValue || 0}
+              onChange={(e) => {
+                const value = e.target.value ? parseFloat(e.target.value) : 0;
+                setFormData(prev => {
+                  if (!prev) return null;
+                  return {
+                    ...prev,
+                    integrationDetails: {
+                      ...(prev as IntegrationCard).integrationDetails,
+                      approvedProposalValue: value
                     }
-                  })}
-                />
-                <span>Equipment Ordered</span>
-              </label>
-              <label className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  checked={(formData as Partial<IntegrationCard>).equipmentStatus?.received || false}
-                  onChange={(e) => updateFormData({ 
-                    equipmentStatus: {
-                      ...(formData as Partial<IntegrationCard>).equipmentStatus,
-                      received: e.target.checked
-                    }
-                  })}
-                />
-                <span>Equipment Received</span>
-              </label>
+                  };
+                });
+              }}
+            />
+            <div className="flex items-center space-x-2 mt-2">
+              <input
+                type="checkbox"
+                id="siteReadinessChecklist"
+                checked={(formData as IntegrationCard).integrationDetails?.siteReadinessChecklistComplete || false}
+                onChange={(e) => {
+                  setFormData(prev => {
+                    if (!prev) return null;
+                    return {
+                      ...prev,
+                      integrationDetails: {
+                        ...(prev as IntegrationCard).integrationDetails,
+                        siteReadinessChecklistComplete: e.target.checked
+                      }
+                    };
+                  });
+                }}
+              />
+              <Label htmlFor="siteReadinessChecklist">Site Readiness Checklist Complete</Label>
             </div>
           </div>
         );
@@ -322,7 +294,7 @@ export const CardEditDialog = <T extends CardType>({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Edit {card.projectNumber}</DialogTitle>
+          <DialogTitle>Edit {formData.title}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           {renderCommonFields()}
